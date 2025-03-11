@@ -688,7 +688,7 @@ class Link(six.with_metaclass(abc.ABCMeta, object)):
     @property 
     def volume(self):
         """float: The volume of the water in the link.
-           This property is only calculated for pipes. For pumps and valves, the volume is neglected"""
+           This property is only calculated for pipes. For pumps and valves, the olume is neglected"""
         return 0.0
 
     @property
