@@ -122,6 +122,18 @@ class Node(six.with_metaclass(abc.ABCMeta, object)):
         self._coordinates = [0,0]
         self._source = None
         self._is_isolated = False
+        
+        from wntr.network.elements import TimeSeries
+        self._soil_temperature_timeseries = TimeSeries(wn._pattern_reg, 6)
+        self._soil_thermal_conductivity = 2
+        self._soil_heat_capacity = 1125
+        self._soil_density = 1700
+        self._total_thermal_resistance_reciprocal = 0.0
+        self._cell_volume = 0.0
+        self._underground_depth = 1.5
+        self._neighbour_nodes = []
+        self._connected_links = []
+        self._connection_side = []
 
     def _compare(self, other):
         """
@@ -255,6 +267,95 @@ class Node(six.with_metaclass(abc.ABCMeta, object)):
             self._coordinates = tuple(coordinates)
         else:
             raise ValueError('coordinates must be a 2-tuple or len-2 list')
+    
+    @property 
+    def soil_temperature_timeseries(self):
+        """float: The soil temperature timeseries for the node (read only)"""
+        return self._soil_temperature_timeseries
+    
+    @property 
+    def base_soil_temperature(self):
+        """float: The constant soil temperature for the node, or the base value for a soil temperature timeseries"""
+        return self._soil_temperature_timeseries.base_value 
+    @base_soil_temperature.setter 
+    def base_soil_temperature(self, value):
+        if value and not isinstance(value, (float, int)):
+            raise ValueError('Soil base temperature must be a number')
+        self._soil_temperature_timeseries.base_value = value
+        
+    @property 
+    def soil_temperature_pattern_name(self):
+        """float: The name of the multiplier pattern to use for the soil temperature timeseries"""
+        return self._soil_temperature_timeseries.pattern_name 
+    @soil_temperature_pattern_name.setter 
+    def soil_temperature_pattern_name(self, name):
+        if name is not None:
+            self._pattern_reg.add_usage(name, (self.name, self.node_type))
+        if name and not isinstance(name, str):
+            raise ValueError('Soil temperature pattern name must be a string')
+        self._soil_temperature_timeseries.pattern_name = name
+    
+    def soil_temperature_at(self, time):
+        """float: The soil temperature at given time in seconds"""
+        return self._soil_temperature_timeseries.at(time)
+    
+    @property
+    def soil_thermal_conductivity(self):
+        """float: The thermal conductivity of soil material. Only used if the soil_temperature_input_method = 'calc' """
+        return self._soil_thermal_conductivity
+    @soil_thermal_conductivity.setter
+    def soil_thermal_conductivity(self, value):
+        if value and not isinstance(value, (float, int)):
+            raise ValueError('Soil thermal conductivity must be a number')
+        self._soil_thermal_conductivity = value
+    
+    @property
+    def soil_heat_capacity(self):
+        """float: The heat capacity of soil material. Only used if the soil_temperature_input_method = 'calc' """
+        return self._soil_heat_capacity
+    @soil_heat_capacity.setter
+    def soil_heat_capacity(self, value):
+        if value and not isinstance(value, (float, int)):
+            raise ValueError('Soil heat capacity must be a number')
+        self._soil_heat_capacity = value
+
+    @property
+    def soil_density(self):
+        """float: The density of soil material. Only used if the soil_temperature_input_method = 'calc' """
+        return self._soil_density
+    @soil_density.setter
+    def soil_density(self, value):
+        if value and not isinstance(value, (float, int)):
+            raise ValueError('Soil density must be a number')
+        self._soil_density = value
+        
+    @property
+    def soil_thermal_diffusivity(self):
+        """float: thermal diffusivity of the soil material"""
+        return self._soil_thermal_conductivity/(self._soil_density*self._soil_heat_capacity)
+        
+    @property 
+    def total_thermal_resistance_reciprocal(self):
+        """float: The reciprocal of the thermal resistance between the soil and the cell volume containing the node.
+           This is equivalent to the thermal resistances of half all pipes connected to the node"""
+        return self._total_thermal_resistance_reciprocal
+    
+    @property
+    def cell_volume(self):
+        """float: returns the volume of the finite-volume cell that contains the node. This is a read only property
+           for junctions and reservoirs this equals to the sum of all pipes connected divided by 2
+           for tanks, the water volume in the tank is added as well"""
+        return self._cell_volume
+    
+    @property
+    def underground_depth(self):
+        """float : The underground depth of the node (vertical distance below soil surface)"""
+        return self._underground_depth
+    @underground_depth.setter
+    def underground_depth(self, value):
+        if value and not isinstance(value, (float, int)):
+            raise ValueError('Underground depth must be a number')
+        self._underground_depth = value
 
     def to_dict(self):
         """Dictionary representation of the node"""
@@ -374,7 +475,8 @@ class Link(six.with_metaclass(abc.ABCMeta, object)):
         # Other
         self._vertices = []
         self._tag = None
-        
+        # Used by thermal solver
+        self._add_connection_data_to_nodes()
 
     def _compare(self, other):
         """
@@ -410,6 +512,46 @@ class Link(six.with_metaclass(abc.ABCMeta, object)):
 
     def __repr__(self):
         return "<Link '{}'>".format(self._link_name)
+    
+    def _add_connection_data_to_nodes(self):
+        """adds connection data to the following start and end nodes properties: neighbour_nodes, connected_links and connection_side"""
+        self._start_node._neighbour_nodes.append(self._end_node._name)
+        self._start_node._connected_links.append(self._link_name)
+        self._start_node._connection_side.append(-1)
+        
+        self._end_node._neighbour_nodes.append(self._start_node._name)
+        self._end_node._connected_links.append(self._link_name)
+        self._end_node._connection_side.append(1)
+    
+    def _add_to_cell_volume(self):
+        """adds half of the pipe's volume to the cells of the nodes connected to it."""
+        self._start_node._cell_volume += self.volume*0.5
+        self._end_node._cell_volume += self.volume*0.5
+        
+    def _add_to_cell_thermal_resistance(self):
+        """adds the thermal resistance of half the pipe length in parallel to the nodes connected to it."""
+        self._start_node._total_thermal_resistance_reciprocal += 0.5/self.total_thermal_resistance
+        self._end_node._total_thermal_resistance_reciprocal += 0.5/self.total_thermal_resistance
+        
+    def _remove_connection_data_from_nodes(self):
+        """removes connection data from the following start and end nodes properties: neighbour_nodes, connected_links and connection_side"""
+        self._start_node._connection_side.pop(self._start_node._connected_links.index(self._link_name))
+        self._start_node._connected_links.remove(self._link_name)
+        self._start_node._neighbour_nodes.remove(self._end_node._name)
+        
+        self._end_node._connection_side.pop(self._end_node._connected_links.index(self._link_name))
+        self._end_node._connected_links.remove(self._link_name)
+        self._end_node._neighbour_nodes.remove(self._start_node._name)
+   
+    def _remove_from_cell_volume(self):
+        """removes half of the pipe's volume to the cells of the nodes connected to it"""
+        self._start_node._cell_volume -= self.volume*0.5
+        self._end_node._cell_volume -= self.volume*0.5
+        
+    def _remove_from_cell_thermal_resistance(self):
+        """removes the thermal resistance of half the pipe length from the nodes connected to it."""
+        self._start_node._total_thermal_resistance_reciprocal -= 0.5/self.total_thermal_resistance
+        self._end_node._total_thermal_resistance_reciprocal -= 0.5/self.total_thermal_resistance
 
     @property
     def link_type(self):
@@ -445,9 +587,20 @@ class Link(six.with_metaclass(abc.ABCMeta, object)):
         return self._start_node
     @start_node.setter
     def start_node(self, node):
+        # before changing the start node, remove the connection data, half the link's volume and thermal resistance from the old start node
+        self._remove_connection_data_from_nodes()
+        self._remove_from_cell_volume()
+        self._remove_from_cell_thermal_resistance()
+        
+        # Change the start node
         self._node_reg.remove_usage(self.start_node_name, (self._link_name, self.link_type))
         self._node_reg.add_usage(node.name, (self._link_name, self.link_type))
         self._start_node = self._node_reg[node.name]
+        
+        # after changing the start node, add the connection data, half the link's volume and thermal resistance to the new start node
+        self._add_connection_data_to_nodes() 
+        self._add_to_cell_volume()
+        self._add_to_cell_thermal_resistance()
 
     @property
     def end_node(self):
@@ -455,9 +608,20 @@ class Link(six.with_metaclass(abc.ABCMeta, object)):
         return self._end_node
     @end_node.setter
     def end_node(self, node):
+        # before changing the end node, remove the connection data, half the link's volume and thermal resistance from the old end node
+        self._remove_connection_data_from_nodes()
+        self._remove_from_cell_volume()
+        self._remove_from_cell_thermal_resistance()
+        
+        # Change the end node
         self._node_reg.remove_usage(self.end_node_name, (self._link_name, self.link_type))
         self._node_reg.add_usage(node.name, (self._link_name, self.link_type))
         self._end_node = self._node_reg[node.name]
+        
+        # after changing the end node, add the connection data, half the link's volume and thermal resistance to the new end node
+        self._add_connection_data_to_nodes() 
+        self._add_to_cell_volume()
+        self._add_to_cell_thermal_resistance()
 
     @property
     def start_node_name(self):
@@ -553,6 +717,18 @@ class Link(six.with_metaclass(abc.ABCMeta, object)):
             if not isinstance(pt, (tuple, list)) or len(pt) != 2:
                 raise ValueError('vertex points must be a tuple or list with two values')
         self._vertices = points
+        
+    @property 
+    def volume(self):
+        """float: The volume of the water in the link.
+           This property is only calculated for pipes. For pumps and valves, the volume is neglected"""
+        return 0.0
+    
+    @property
+    def total_thermal_resistance(self):
+        """float: The total thermal resistance of pipe wall and the insulation material (optional)
+           This property is calculated for pipes only. Pumps and valves are assumed to be adiabatic (resistance = infinity)"""
+        return float('inf')
     
     def to_dict(self):
         """Dictionary representation of the link"""
