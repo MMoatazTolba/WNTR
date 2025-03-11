@@ -721,6 +721,12 @@ class WaterNetworkModel(AbstractModel):
                         raise RuntimeError(
                             "Cannot remove link {0} without first removing control/rule {1}".format(name, control_name)
                         )
+        
+        # When a link is removed, its connection data, volume and thermal resistances should also be removed from its start and end nodes
+        link._remove_connection_data_from_nodes()
+        link._remove_from_cell_volume()
+        link._remove_from_cell_thermal_resistance()
+                    
         self._link_reg.__delitem__(name)
 
     def remove_pattern(self, name):
@@ -2799,4 +2805,3 @@ class LinkRegistry(Registry):
         """
         for name in self._gpvs:
             yield name, self._data[name]
-
