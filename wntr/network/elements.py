@@ -105,6 +105,8 @@ class Junction(Node):
         self._leak_start_control_name = 'junction'+self._name+'start_leak_control'
         self._leak_end_control_name = 'junction'+self._name+'end_leak_control'
         
+        self._initial_temperature = 10.0
+        
     def __repr__(self):
         return "<Junction '{}', elevation={}, demand_timeseries_list={}>".format(self._name, self.elevation, repr(self.demand_timeseries_list))
 
@@ -217,6 +219,16 @@ class Junction(Node):
     @base_demand.setter
     def base_demand(self, value):
         raise RuntimeWarning('The base_demand property is read-only. Please modify using demand_timeseries_list[0].base_value.')
+        
+    @property 
+    def initial_temperature(self):
+        """float : the initial temperature at the node (temperature at time 0)"""
+        return self._initial_temperature
+    @initial_temperature.setter 
+    def initial_temperature(self, value):
+        if value and not isinstance(value, (float, int)):
+            raise ValueError('Initial temperature must be a number')
+        self._initial_temperature = value
 
     @property
     def demand_pattern(self):
@@ -453,6 +465,8 @@ class Tank(Node):
         self._leak_discharge_coeff = 0.0
         self._leak_start_control_name = 'tank'+self._name+'start_leak_control'
         self._leak_end_control_name = 'tank'+self._name+'end_leak_control'
+        
+        self._initial_temperature = 10.0
 
     def __repr__(self):
         return "<Tank '{}', elevation={}, min_level={}, max_level={}, diameter={}, min_vol={}, vol_curve='{}'>".format(self._name, self.elevation, self.min_level, self.max_level, self.diameter, self.min_vol, (self.vol_curve.name if self.vol_curve else None))
@@ -619,6 +633,16 @@ class Tank(Node):
     def pressure(self):
         """float : (read-only) the current simulation pressure (head - elevation)"""
         return self._head - self.elevation
+    
+    @property 
+    def initial_temperature(self):
+        """float : the initial temperature at the node (temperature at time 0)"""
+        return self._initial_temperature
+    @initial_temperature.setter 
+    def initial_temperature(self, value):
+        if value and not isinstance(value, (float, int)):
+            raise ValueError('Initial temperature must be a number')
+        self._initial_temperature = value
 
     def get_volume(self, level=None):
         """
@@ -777,6 +801,7 @@ class Reservoir(Node):
         self._head_timeseries = TimeSeries(wn._pattern_reg, base_head)
         self.head_pattern_name = head_pattern
         """str : Name of the head pattern to use"""
+        self._temperature_timeseries = TimeSeries(wn._pattern_reg, 8.0)
 
     def __repr__(self):
         return "<Reservoir '{}', head={}>".format(self._name, self._head_timeseries)
@@ -821,7 +846,36 @@ class Reservoir(Node):
     def pressure(self):
         """float : (read-only) the current simulation pressure (0.0 for reservoirs)"""
         return 0.0
-
+    @property 
+    def temperature_timeseries(self):
+        """float: The fluid temperature timeseries for the node (read only)"""
+        return self._temperature_timeseries
+    
+    @property 
+    def base_temperature(self):
+        """float: The constant fluid temperature for the node, or the base value for a temperature timeseries"""
+        return self._temperature_timeseries.base_value 
+    @base_temperature.setter 
+    def base_temperature(self, value):
+        if value and not isinstance(value, (float, int)):
+            raise ValueError('Soil base temperature must be a number')
+        self._temperature_timeseries.base_value = value
+        
+    @property 
+    def temperature_pattern_name(self):
+        """float: The name of the multiplier pattern to use for the water temperature timeseries"""
+        return self._temperature_timeseries.pattern_name 
+    @temperature_pattern_name.setter 
+    def temperature_pattern_name(self, name):
+        if name is not None:
+            self._pattern_reg.add_usage(name, (self.name, self.node_type))
+        if name and not isinstance(name, str):
+            raise ValueError('Soil temperature pattern name must be a string')
+        self._temperature_timeseries.pattern_name = name
+    
+    def temperature_at(self, time):
+        """float: The soil temperature at given time in seconds"""
+        return self._temperature_timeseries.at(time)
 
 class Pipe(Link):
     """
@@ -910,6 +964,15 @@ class Pipe(Link):
         self._friction_factor = None
         self._reaction_rate = None
         
+        self._thickness = 0.006
+        self._thermal_conductivity = 0.042 #0.12  
+        self._insulation_thickness = 0
+        self._insulation_thermal_conductivity = 0.034
+        
+        self._add_to_cell_volume()
+        self._add_to_cell_thermal_resistance()
+
+        
     def __repr__(self):
         return "<Pipe '{}' from '{}' to '{}', length={}, diameter={}, roughness={}, minor_loss={}, check_valve={}, status={}>".format(self._link_name,
                        self.start_node, self.end_node, self.length, self.diameter, 
@@ -939,7 +1002,13 @@ class Pipe(Link):
         return self._length
     @length.setter
     def length(self, value):
+        # before assigning the given value, the old volume of the pipe is first removed from the cells of the start and end nodes
+        self._remove_from_cell_volume()
+        self._remove_from_cell_thermal_resistance()
         self._length = value
+        # after the given value is assigned, the new volume of the pipe is added to the cells of the start and end nodes
+        self._add_to_cell_volume()
+        self._add_to_cell_thermal_resistance()
 
     @property
     def diameter(self):
@@ -947,7 +1016,13 @@ class Pipe(Link):
         return self._diameter
     @diameter.setter
     def diameter(self, value):
+        # before assigning the given value, the old volume of the pipe is first removed from the cells of the start and end nodes
+        self._remove_from_cell_volume()
+        self._remove_from_cell_thermal_resistance()
         self._diameter = value
+        # after the given value is assigned, the new volume of the pipe is added to the cells of the start and end nodes
+        self._add_to_cell_volume()
+        self._add_to_cell_thermal_resistance()
 
     @property
     def roughness(self):
@@ -1036,7 +1111,67 @@ class Pipe(Link):
     def reaction_rate(self):
         """float : (read-only) the current simulation reaction rate in the pipe"""
         return self._reaction_rate
-
+    
+    @property
+    def thickness(self):
+        """float: the wall thickness of the pipe"""
+        return self._thickness
+    @thickness.setter
+    def thickness(self, value):
+        if value and not isinstance(value, (float, int)):
+            raise ValueError('Pipe wall thickness must be a number')
+        self._remove_from_cell_thermal_resistance()
+        self._thickness = value
+        self._add_to_cell_thermal_resistance()
+        
+    @property
+    def thermal_conductivity(self):
+        """float: the thermal conductivity of pipe material"""
+        return self._thermal_conductivity
+    @thermal_conductivity.setter
+    def thermal_conductivity(self, value):
+        if value and not isinstance(value, (float, int)):
+            raise ValueError('thermal conductivity must be a number')
+        self._remove_from_cell_thermal_resistance()
+        self._thermal_conductivity = value
+        self._add_to_cell_thermal_resistance()
+        
+    @property
+    def insulation_thickness(self):
+        """float: the wall thickness of the pipe"""
+        return self._insulation_thickness
+    @insulation_thickness.setter
+    def insulation_thickness(self, value):
+        if value and not isinstance(value, (float, int)):
+            raise ValueError('Insulation thickness must be a number')
+        self._remove_from_cell_thermal_resistance()
+        self._insulation_thickness = value
+        self._add_to_cell_thermal_resistance()
+        
+    @property
+    def insulation_thermal_conductivity(self):
+        """float: the thermal conductivity of pipe material"""
+        return self._insulation_thermal_conductivity
+    @insulation_thermal_conductivity.setter
+    def insulation_thermal_conductivity(self, value):
+        if value and not isinstance(value, (float, int)):
+            raise ValueError('thermal conductivity must be a number')
+        self._remove_from_cell_thermal_resistance()
+        self._insulation_thermal_conductivity = value
+        self._add_to_cell_thermal_resistance()
+        
+    @property
+    def volume(self):
+        """float : volume of the water inside the pipe"""
+        return np.pi/4 * self._diameter * self._diameter * self._length
+    
+    @property 
+    def total_thermal_resistance(self):
+        """float: total thermal resistance of the pipe and insulation materials"""
+        return (np.log(1 + 2*self._thickness/self._diameter)/self._thermal_conductivity + 
+                np.log(1 + 2*self._insulation_thickness/(self._diameter+2*self._thickness)) / 
+                self._insulation_thermal_conductivity)/(2*np.pi*self._length)  
+    
 
 class Pump(Link):
     """
