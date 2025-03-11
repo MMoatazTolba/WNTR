@@ -466,6 +466,53 @@ class HydraulicOptions(_OptionsBase):
         self.__dict__[name] = value
 
 
+class ThermalOptions(_OptionsBase): 
+    """
+    Options related to the finite volume FV energy equation solver
+
+    Parameters
+    ----------
+        
+    heat_capacity : float
+        Heat_capacity (cp) of the fluid in J/(kg.K). By default 4180 J/(kg.K)
+
+    max_pipe_length : float or None
+        Any pipe with a length more that max_pipe_length (in meters) will be split,
+        by default it is set to None, which means no splitting occurs
+    """
+
+    def __init__(self,
+                 heat_capacity: float = 4180.0,
+                 max_pipe_length: float = None,):
+                  
+        self.heat_capacity = heat_capacity
+        self.max_pipe_length = max_pipe_length
+
+
+    def __setattr__(self, name, value):
+        
+        if name == 'heat_capacity':
+            if isinstance(value, float | int):
+                    value = abs(float(value))
+            else:
+                try:
+                    value = abs(float(value))
+                except ValueError:
+                    raise ValueError('%s must be a number'%name)
+            
+        elif name in 'max_pipe_length':
+            try:
+                value = _float_or_None(value)
+                if value != None: value = abs(value)
+            except ValueError:
+                raise ValueError('%s must be a number or None'%name)
+
+        else:
+            raise AttributeError('%s is not a valid attribute of ThremalOptions'%name)
+            
+        self.__dict__[name] = value
+        
+        
 class ReactionOptions(_OptionsBase):
     """
     Options related to water quality reactions.
@@ -729,6 +776,9 @@ class Options(_OptionsBase):
 
     hydraulic : HydraulicOptions
         Contains hydraulic solver parameters
+    
+    thermal : ThermalOptions
+        Contains energy solver parameters
 
     reaction : ReactionOptions
         Contains chemical reaction parameters
@@ -754,6 +804,7 @@ class Options(_OptionsBase):
     def __init__(self,
                  time: TimeOptions = None,
                  hydraulic: HydraulicOptions = None,
+                 thermal: ThermalOptions = None,
                  report: ReportOptions = None,
                  quality: QualityOptions = None,
                  reaction: ReactionOptions = None,
@@ -762,6 +813,7 @@ class Options(_OptionsBase):
                  user: UserOptions = None):
         self.time = TimeOptions.factory(time)
         self.hydraulic = HydraulicOptions.factory(hydraulic)
+        self.thermal = ThermalOptions.factory(thermal)
         self.report = ReportOptions.factory(report)
         self.quality = QualityOptions.factory(quality)
         self.reaction = ReactionOptions.factory(reaction)
@@ -778,6 +830,10 @@ class Options(_OptionsBase):
             if not isinstance(value, (HydraulicOptions, dict, tuple, list)):
                 raise ValueError('hydraulic must be a HydraulicOptions or convertable object')
             value = HydraulicOptions.factory(value)
+        elif name == 'thermal':
+            if not isinstance(value, (ThermalOptions, dict, tuple, list)):
+                raise ValueError('thermal must be a ThermalOptions or convertable object')
+            value = ThermalOptions.factory(value)
         elif name == 'report':
             if not isinstance(value, (ReportOptions, dict, tuple, list)):
                 raise ValueError('report must be a ReportOptions or convertable object')
