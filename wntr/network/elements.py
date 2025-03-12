@@ -12,6 +12,7 @@ import copy
 from scipy.optimize import curve_fit, OptimizeWarning
 from warnings import warn
 from collections.abc import MutableSequence
+from datetime import datetime, timedelta
 
 from .base import Node, Link, Registry, LinkStatus
 from .options import TimeOptions
@@ -2484,6 +2485,74 @@ class TimeSeries(object):
 #        fmt = ' {:12.6g}   {:20s}   {:14s}\n'
 #        return fmt.format(self._base, self._pattern, self._category)
     
+
+class DateTimeSeries(TimeSeries):
+    """
+    Enhanced TimeSeries with datetime support
+    
+    Parameters
+    ----------
+    pattern : wntr.network.elements.Pattern
+        WNTR pattern object
+    base_value : float
+        Base value for the time series
+    start_datetime : datetime
+        Starting datetime for the series
+    """
+    
+    def __init__(self, model, base, pattern_name=None, category=None, start_datetime: datetime=datetime(2024, 3, 8, 8, 0)):
+        super().__init__(model, base, pattern_name, category)
+        self.start_datetime = start_datetime
+        self._time_options = model._options.time
+        
+    def __eq__(self, other: object) -> bool:
+        if not super().__eq__(other):
+            return False
+        if isinstance(other, DateTimeSeries):
+            return self.start_datetime == other.start_datetime
+        return False
+    
+    def __str__(self) -> str:
+        base_str = super().__str__()
+        return f"{base_str}\nStart: {self.start_datetime}"
+    
+    def __repr__(self) -> str:
+        return (f"DateTimeSeries(pattern={self.pattern!r}, "
+                f"base_value={self.base_value!r}, "
+                f"start_datetime={self.start_datetime!r})")
+    
+    def __getitem__(self, key: int | datetime) -> float:
+        if isinstance(key, datetime):
+            return self.at(self._datetime_to_seconds(key))
+        return super().__getitem__(key)
+    
+    @property
+    def end_datetime(self) -> datetime:
+        pattern_duration = self._time_options.duration
+        return self.start_datetime + timedelta(seconds=pattern_duration)
+    
+    @property
+    def time_step(self) -> timedelta:
+        return timedelta(seconds=self._time_options.pattern_timestep)
+    
+    def at(self, time: float | datetime) -> float:
+        if isinstance(time, datetime):
+            return super().at(self._datetime_to_seconds(time))
+        return super().at(time)
+    
+    def _datetime_to_seconds(self, dt: datetime) -> float:
+        if dt < self.start_datetime:
+            raise ValueError("Datetime before series start")
+        delta = dt - self.start_datetime
+        return delta.total_seconds()
+    
+    def pattern_to_dict(self) -> dict:
+        return {dt:self.at(dt) for dt in [self.start_datetime + self.time_step * i for i in range(len(self.pattern))]}
+    
+    def to_dict(self) -> dict:
+        base_dict = super().to_dict()
+        base_dict['start_datetime'] = self.start_datetime.isoformat()
+        return base_dict
 
 class Demands(MutableSequence):
     """
