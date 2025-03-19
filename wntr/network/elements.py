@@ -967,11 +967,10 @@ class Pipe(Link):
         
         self._thickness = 0.006
         self._thermal_conductivity = 0.042 #0.12  
-        self._insulation_thickness = 0
+        self._insulation_thickness = 0.0 #0.02
         self._insulation_thermal_conductivity = 0.034
         
-        self._add_to_cell_volume()
-        self._add_to_cell_thermal_resistance()
+        self._add_connection_data_to_nodes()
 
         
     def __repr__(self):
@@ -1003,13 +1002,11 @@ class Pipe(Link):
         return self._length
     @length.setter
     def length(self, value):
-        # before assigning the given value, the old volume of the pipe is first removed from the cells of the start and end nodes
-        self._remove_from_cell_volume()
-        self._remove_from_cell_thermal_resistance()
         self._length = value
-        # after the given value is assigned, the new volume of the pipe is added to the cells of the start and end nodes
-        self._add_to_cell_volume()
-        self._add_to_cell_thermal_resistance()
+        self._modify_connection_data('length', self._length)
+        self._modify_connection_data('volume', self.volume)
+        self._modify_connection_data('thermal_resistance', self.total_thermal_resistance)
+
 
     @property
     def diameter(self):
@@ -1017,13 +1014,15 @@ class Pipe(Link):
         return self._diameter
     @diameter.setter
     def diameter(self, value):
-        # before assigning the given value, the old volume of the pipe is first removed from the cells of the start and end nodes
-        self._remove_from_cell_volume()
-        self._remove_from_cell_thermal_resistance()
         self._diameter = value
-        # after the given value is assigned, the new volume of the pipe is added to the cells of the start and end nodes
-        self._add_to_cell_volume()
-        self._add_to_cell_thermal_resistance()
+        self._modify_connection_data('outer_diameter', self.outer_diameter)
+        self._modify_connection_data('volume', self.volume)
+        self._modify_connection_data('thermal_resistance', self.total_thermal_resistance)
+        
+    @property
+    def outer_diameter(self):
+        """float: outer diameter of the pipe including the insulation thickness"""
+        return self._diameter + 2*(self._thickness + self._insulation_thickness)
 
     @property
     def roughness(self):
@@ -1121,9 +1120,9 @@ class Pipe(Link):
     def thickness(self, value):
         if value and not isinstance(value, (float, int)):
             raise ValueError('Pipe wall thickness must be a number')
-        self._remove_from_cell_thermal_resistance()
         self._thickness = value
-        self._add_to_cell_thermal_resistance()
+        self._modify_connection_data('outer_diameter', self.outer_diameter)
+        self._modify_connection_data('thermal_resistance', self.total_thermal_resistance)
         
     @property
     def thermal_conductivity(self):
@@ -1133,9 +1132,8 @@ class Pipe(Link):
     def thermal_conductivity(self, value):
         if value and not isinstance(value, (float, int)):
             raise ValueError('thermal conductivity must be a number')
-        self._remove_from_cell_thermal_resistance()
         self._thermal_conductivity = value
-        self._add_to_cell_thermal_resistance()
+        self._modify_connection_data('thermal_resistance', self.total_thermal_resistance)
         
     @property
     def insulation_thickness(self):
@@ -1145,9 +1143,9 @@ class Pipe(Link):
     def insulation_thickness(self, value):
         if value and not isinstance(value, (float, int)):
             raise ValueError('Insulation thickness must be a number')
-        self._remove_from_cell_thermal_resistance()
         self._insulation_thickness = value
-        self._add_to_cell_thermal_resistance()
+        self._modify_connection_data('outer_diameter', self.outer_diameter)
+        self._modify_connection_data('thermal_resistance', self.total_thermal_resistance)
         
     @property
     def insulation_thermal_conductivity(self):
@@ -1157,9 +1155,8 @@ class Pipe(Link):
     def insulation_thermal_conductivity(self, value):
         if value and not isinstance(value, (float, int)):
             raise ValueError('thermal conductivity must be a number')
-        self._remove_from_cell_thermal_resistance()
         self._insulation_thermal_conductivity = value
-        self._add_to_cell_thermal_resistance()
+        self._modify_connection_data('thermal_resistance', self.total_thermal_resistance)
         
     @property
     def volume(self):
@@ -1263,6 +1260,8 @@ class Pump(Link):
         self._energy_pattern = None
         self._outage_rule_name = name+'_outage'
         self._after_outage_rule_name = name+'_after_outage'
+        
+        self._add_connection_data_to_nodes()
 
     def _compare(self, other):
         if not super(Pump, self)._compare(other):
@@ -1779,6 +1778,8 @@ class Valve(Link):
         self._user_status = LinkStatus.Active
         self._initial_setting = 0.0
         self._velocity = None
+        
+        self._add_connection_data_to_nodes()
 
     def __repr__(self):
         fmt = "<Valve '{}' from '{}' to '{}', valve_type='{}', diameter={}, minor_loss={}, setting={}, status={}>"
