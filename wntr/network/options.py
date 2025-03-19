@@ -479,19 +479,34 @@ class ThermalOptions(_OptionsBase):
     max_pipe_length : float or None
         Any pipe with a length more that max_pipe_length (in meters) will be split,
         by default it is set to None, which means no splitting occurs
+        
+    air_tempererature_base_value: float
+        The base value for air temperature that when multiplied by the multipliers defined in the air temperature pattern
+        give the air temperature as a function of time, by default it is set to 1 °C. 
+        It is only used when wall boundary conditions are chosen to be calculated from air temperature either using the 
+        steady state or the transient conduction equations
+    
+        
+    air_temperature_pattern_name: string
+        The name of the pattern where multipliers are defined to be multiplied by the air temperature base value to give
+        the air temperature as a function of time, by default it is set to '1' which is a constant function
     """
 
     def __init__(self,
                  heat_capacity: float = 4180.0,
-                 max_pipe_length: float = None,):
+                 max_pipe_length: float = None,
+                 air_temperature_base_value: float = 1.0,
+                 air_temperature_pattern_name: str = '1'):
                   
         self.heat_capacity = heat_capacity
         self.max_pipe_length = max_pipe_length
+        self.air_temperature_base_value = air_temperature_base_value
+        self.air_temperature_pattern_name = air_temperature_pattern_name
 
 
     def __setattr__(self, name, value):
         
-        if name == 'heat_capacity':
+        if name in ['heat_capacity', 'air_temperature_base_value']:
             if isinstance(value, float | int):
                     value = abs(float(value))
             else:
@@ -500,14 +515,14 @@ class ThermalOptions(_OptionsBase):
                 except ValueError:
                     raise ValueError('%s must be a number'%name)
             
-        elif name in 'max_pipe_length':
+        elif name == 'max_pipe_length':
             try:
                 value = _float_or_None(value)
                 if value != None: value = abs(value)
             except ValueError:
                 raise ValueError('%s must be a number or None'%name)
 
-        else:
+        elif name != 'air_temperature_pattern_name':
             raise AttributeError('%s is not a valid attribute of ThremalOptions'%name)
             
         self.__dict__[name] = value
