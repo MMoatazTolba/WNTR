@@ -2,6 +2,7 @@
 The wntr.network.base module includes base classes for network elements and 
 the network model.
 """
+import numpy as np
 import logging
 import six
 from six import string_types
@@ -128,12 +129,8 @@ class Node(six.with_metaclass(abc.ABCMeta, object)):
         self._soil_thermal_conductivity = 2
         self._soil_heat_capacity = 1125
         self._soil_density = 1700
-        self._total_thermal_resistance_reciprocal = 0.0
-        self._cell_volume = 0.0
         self._underground_depth = 1.5
-        self._neighbour_nodes = []
-        self._connected_links = []
-        self._connection_side = []
+        self._connections = NodeConnections()
 
     def _compare(self, other):
         """
@@ -338,14 +335,14 @@ class Node(six.with_metaclass(abc.ABCMeta, object)):
     def total_thermal_resistance_reciprocal(self):
         """float: The reciprocal of the thermal resistance between the soil and the cell volume containing the node.
            This is equivalent to the thermal resistances of half all pipes connected to the node"""
-        return self._total_thermal_resistance_reciprocal
+        return np.reciprocal(self._connections.thermal_resistances).sum()*0.5
     
     @property
     def cell_volume(self):
         """float: returns the volume of the finite-volume cell that contains the node. This is a read only property
            for junctions and reservoirs this equals to the sum of all pipes connected divided by 2
            for tanks, the water volume in the tank is added as well"""
-        return self._cell_volume
+        return sum(self._connections.volumes) * 0.5
     
     @property
     def underground_depth(self):
@@ -472,8 +469,6 @@ class Link(six.with_metaclass(abc.ABCMeta, object)):
         self._is_isolated = False
         self._quality = None
         self._headloss = None
-        
-        self._add_connection_data_to_nodes()
 
     def _compare(self, other):
         """
@@ -511,44 +506,19 @@ class Link(six.with_metaclass(abc.ABCMeta, object)):
         return "<Link '{}'>".format(self._link_name)
     
     def _add_connection_data_to_nodes(self):
-        """adds connection data to the following start and end nodes properties: neighbour_nodes, connected_links and connection_side"""
-        self._start_node._neighbour_nodes.append(self._end_node._name)
-        self._start_node._connected_links.append(self._link_name)
-        self._start_node._connection_side.append(-1)
-        
-        self._end_node._neighbour_nodes.append(self._start_node._name)
-        self._end_node._connected_links.append(self._link_name)
-        self._end_node._connection_side.append(1)
-    
-    def _add_to_cell_volume(self):
-        """adds half of the pipe's volume to the cells of the nodes connected to it."""
-        self._start_node._cell_volume += self.volume*0.5
-        self._end_node._cell_volume += self.volume*0.5
-        
-    def _add_to_cell_thermal_resistance(self):
-        """adds the thermal resistance of half the pipe length in parallel to the nodes connected to it."""
-        self._start_node._total_thermal_resistance_reciprocal += 0.5/self.total_thermal_resistance
-        self._end_node._total_thermal_resistance_reciprocal += 0.5/self.total_thermal_resistance
+        """adds connection data to start and end nodes"""
+        self._start_node._connections.append(self._end_node._name, self._link_name, -1, self.length, self.volume, self.outer_diameter, self.total_thermal_resistance)
+        self._end_node._connections.append(self._start_node._name, self._link_name,  1, self.length, self.volume, self.outer_diameter, self.total_thermal_resistance)
         
     def _remove_connection_data_from_nodes(self):
-        """removes connection data from the following start and end nodes properties: neighbour_nodes, connected_links and connection_side"""
-        self._start_node._connection_side.pop(self._start_node._connected_links.index(self._link_name))
-        self._start_node._connected_links.remove(self._link_name)
-        self._start_node._neighbour_nodes.remove(self._end_node._name)
+        """removes connection data from start and end nodes"""
+        self._start_node._connections.remove(self._link_name)
+        self._end_node._connections.remove(self._link_name)
         
-        self._end_node._connection_side.pop(self._end_node._connected_links.index(self._link_name))
-        self._end_node._connected_links.remove(self._link_name)
-        self._end_node._neighbour_nodes.remove(self._start_node._name)
-   
-    def _remove_from_cell_volume(self):
-        """removes half of the pipe's volume to the cells of the nodes connected to it"""
-        self._start_node._cell_volume -= self.volume*0.5
-        self._end_node._cell_volume -= self.volume*0.5
-        
-    def _remove_from_cell_thermal_resistance(self):
-        """removes the thermal resistance of half the pipe length from the nodes connected to it."""
-        self._start_node._total_thermal_resistance_reciprocal -= 0.5/self.total_thermal_resistance
-        self._end_node._total_thermal_resistance_reciprocal -= 0.5/self.total_thermal_resistance
+    def _modify_connection_data(self, property_name, property_value):
+        """modifies one of the properties of node connections"""
+        self._start_node._connections.modify_property(self._link_name, property_name, property_value)
+        self._end_node._connections.modify_property(self._link_name, property_name, property_value)
 
     @property
     def link_type(self):
@@ -581,42 +551,28 @@ class Link(six.with_metaclass(abc.ABCMeta, object)):
         """:class:`~wntr.network.base.Node`: The start node object."""
         return self._start_node
     @start_node.setter
-    def start_node(self, node):
-        # before changing the start node, remove the connection data, half the link's volume and thermal resistance from the old start node
-        self._remove_connection_data_from_nodes()
-        self._remove_from_cell_volume()
-        self._remove_from_cell_thermal_resistance()
+    def start_node(self, node):        
+        self._remove_connection_data_from_nodes()  # before changing the start node, remove the connection data from the old start node
         
-        # Change the start node
         self._node_reg.remove_usage(self.start_node_name, (self._link_name, self.link_type))
         self._node_reg.add_usage(node.name, (self._link_name, self.link_type))
         self._start_node = self._node_reg[node.name]
         
-        # after changing the start node, add the connection data, half the link's volume and thermal resistance to the new start node
-        self._add_connection_data_to_nodes() 
-        self._add_to_cell_volume()
-        self._add_to_cell_thermal_resistance()
+        self._add_connection_data_to_nodes()  # after changing the start node, add the connection data to the new start node
 
     @property
     def end_node(self):
         """:class:`~wntr.network.base.Node`: The end node object."""
         return self._end_node
     @end_node.setter
-    def end_node(self, node):
-        # before changing the end node, remove the connection data, half the link's volume and thermal resistance from the old end node
-        self._remove_connection_data_from_nodes()
-        self._remove_from_cell_volume()
-        self._remove_from_cell_thermal_resistance()
+    def end_node(self, node): 
+        self._remove_connection_data_from_nodes()  # before changing the end node, remove the connection data from the old end node
         
-        # Change the end node
         self._node_reg.remove_usage(self.end_node_name, (self._link_name, self.link_type))
         self._node_reg.add_usage(node.name, (self._link_name, self.link_type))
         self._end_node = self._node_reg[node.name]
-        
-        # after changing the end node, add the connection data, half the link's volume and thermal resistance to the new end node
-        self._add_connection_data_to_nodes() 
-        self._add_to_cell_volume()
-        self._add_to_cell_thermal_resistance()
+             
+        self._add_connection_data_to_nodes()  # after changing the end node, add the connection data to the new end node
 
     @property
     def start_node_name(self):
@@ -714,11 +670,22 @@ class Link(six.with_metaclass(abc.ABCMeta, object)):
         self._vertices = points
         
     @property 
+    def outer_diameter(self):
+        """float: The outer diameter of the link. 
+           This property is only calculated for pipes. For pumps and valves, the dimensions are neglected"""
+        return 0.0
+    
+    @property 
+    def length(self):
+        """float: The length of the link """
+        return 0.0
+    
+    @property 
     def volume(self):
         """float: The volume of the water in the link.
            This property is only calculated for pipes. For pumps and valves, the volume is neglected"""
         return 0.0
-    
+
     @property
     def total_thermal_resistance(self):
         """float: The total thermal resistance of pipe wall and the insulation material (optional)
@@ -934,8 +901,78 @@ class Registry(MutableMapping):
         for k, v in self._data.items():
             l.append(v.to_dict())
         return l
+    
 
-
+class NodeConnections:
+    """
+    class for node connections.
+    For a given node the NodeConnections object has the following properties:
+        
+        neighbour_nodes    : a list of the names of all neighbour nodes around the node.
+                             This property is used by the thermal solver to determine upstream and downstream nodes
+                             
+        connected_links    : a list of the names of all links connected to the node.
+                             This property is used by the thermal solver to determine upstream and downstream links
+                             
+        connection_side    : a list of connection sides with -1 meaning that the node is the start node of the link 
+                             and 1 meaning that the node is the end node of the link.
+                             This property is used by the thermal solver to calculate the flow direction 
+                             
+        lengths            : a list of the lengths of all pipes connected to the node.
+                             This property is used by the Node class to calculate the thermal resistance of the soil
+                             
+        volumes            : a list of the water volumes inside each of the pipes connected to the node.
+                             This property is used to calculate the volume of the cell containing the node.
+                             
+        outer_diameters    : a list of the outer diameters of pipes connected to the node(including insulation thickness).
+                             This property is used by the Node class to calculate the thermal resistance of the soil
+                             
+        thermal_resistances: a list of the thermal resistances of pipes  (including insulation thermal resistance)              
+    """
+    
+    def __init__(self):
+        self.neighbour_nodes = []
+        self.connected_links = []
+        self.connection_side = []
+        self.lengths = []
+        self.volumes = []
+        self.outer_diameters = []
+        self.thermal_resistances = []
+        
+    def append(self, node_name, link_name, link_side, length = 0.0, volume =0.0, outer_diameter = 0.0, thermal_resistance = float('inf')):
+        self.neighbour_nodes.append(node_name)
+        self.connected_links.append(link_name)
+        self.connection_side.append(link_side)
+        self.lengths.append(length)
+        self.volumes.append(volume)
+        self.outer_diameters.append(outer_diameter)
+        self.thermal_resistances.append(thermal_resistance)
+        
+    def remove(self, link_name):
+        index = self.connected_links.index(link_name)
+        self.neighbour_nodes.pop(index)
+        self.connected_links.pop(index)
+        self.connection_side.pop(index)
+        self.lengths.pop(index)
+        self.volumes.pop(index)
+        self.outer_diameters.pop(index)
+        self.thermal_resistances.pop(index)
+        
+    def modify_property(self, link_name, property_name, property_value):
+        index = self.connected_links.index(link_name)
+        if property_name == 'length':
+            self.lengths[index] = property_value
+        elif property_name == 'volume':
+            self.volumes[index] = property_value
+        elif property_name == 'outer_diameter':
+            self.outer_diameters[index] = property_value
+        elif property_name == 'thermal_resistance':
+            self.thermal_resistances[index] = property_value
+        else:
+            raise AttributeError("%s is not a valid property of NodeConnections. Valid properties are: 'length','outer_diameter', and 'thermal_resistance'"%property_name)
+            
+    
+        
 class NodeType(enum.IntEnum):
     """
     Enum class for node types.
