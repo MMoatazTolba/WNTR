@@ -41,8 +41,8 @@ class ThermalSimulator:
             # 2- Create new properties: _connected_links_id list and the _neighbour_nodes_id list that use ids instead of names
             self._nodes._data[node_name] = wn.nodes[node_name]
             self._nodes[node_name]._id = self._nodes_name2id[node_name]
-            self._nodes[node_name]._connected_links_ids = np.array( [self._links_name2id[i] for i in self._nodes[node_name]._connected_links] )
-            self._nodes[node_name]._neighbour_nodes_ids = np.array( [self._nodes_name2id[i] for i in self._nodes[node_name]._neighbour_nodes] )
+            self._nodes[node_name]._connections.connected_links_ids = np.array( [self._links_name2id[i] for i in self._nodes[node_name]._connections.connected_links] )
+            self._nodes[node_name]._connections.neighbour_nodes_ids = np.array( [self._nodes_name2id[i] for i in self._nodes[node_name]._connections.neighbour_nodes] )
         
         for link_name in self._links_names:
             wn.links[link_name]._id = self._links_name2id[link_name]
@@ -84,17 +84,17 @@ class ThermalSimulator:
             
     
     def _build_linear_system(self, t, node, acc_volume = 0):
-        in_out = self._flow_dir[t, node._connected_links_ids] * node._connection_side
+        in_out = self._flow_dir[t, node._connections.connected_links_ids] * node._connections.connection_side
         
-        upstream_links_ids = node._connected_links_ids[in_out > 0] 
-        upstream_nodes_ids = node._neighbour_nodes_ids[in_out > 0]
-        downstream_links_ids = node._connected_links_ids[in_out <= 0]
+        upstream_links_ids = node._connections.connected_links_ids[in_out > 0] 
+        upstream_nodes_ids = node._connections.neighbour_nodes_ids[in_out > 0]
+        downstream_links_ids = node._connections.connected_links_ids[in_out <= 0]
         
         rho_cp_R_inv = node.total_thermal_resistance_reciprocal / (self._fluid_density * self._fluid_heat_capacity)
         
-        self._coef_matrix[node._id, node._id] = (node._cell_volume + acc_volume)/ self._timestep + self._flow_val[t, downstream_links_ids].sum() + self._demands[t, node._id] + rho_cp_R_inv                                                  
+        self._coef_matrix[node._id, node._id] = (node.cell_volume + acc_volume)/ self._timestep + self._flow_val[t, downstream_links_ids].sum() + self._demands[t, node._id] + rho_cp_R_inv                                                  
         self._coef_matrix[node._id, upstream_nodes_ids] = -self._flow_val[t, upstream_links_ids] 
-        self._result_vector[node._id] = node.soil_temperature_at(self._times[t]) * rho_cp_R_inv  + self._temperatures[t-1, node._id] * (node._cell_volume + acc_volume)/ self._timestep
+        self._result_vector[node._id] = node.soil_temperature_at(self._times[t]) * rho_cp_R_inv  + self._temperatures[t-1, node._id] * (node.cell_volume + acc_volume)/ self._timestep
         
         
     def run_sim(self):
