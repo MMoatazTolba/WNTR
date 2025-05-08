@@ -472,8 +472,6 @@ class Link(six.with_metaclass(abc.ABCMeta, object)):
         # Other
         self._vertices = []
         self._tag = None
-        # Used by thermal solver
-        self._add_connection_data_to_nodes()
 
     def _compare(self, other):
         """
