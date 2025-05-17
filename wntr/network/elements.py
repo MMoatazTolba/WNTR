@@ -2945,3 +2945,178 @@ class Source(object):
         if self.species:
             ret['species'] = self.species
         return ret
+
+
+class Weather(object):
+    """
+    Weather class.
+    
+    Parameters
+    ----------
+    air_temperature : float
+         Average air temperature over the simulation period. By default = 15°C
+    air_temperature_pattern: string
+        The name of the pattern describing air temperature changes. By default = None (i.e constant)
+    wind_speed : float
+         Average wind speed over the simulation period. By default = 1.0 m/s
+    wind_speed_pattern: string
+        The name of the pattern describing wind speed changes. By default = None (i.e constant)
+    rel_humidity : float
+         Average relative humidity over the simulation period. By default = 80%
+    rel_humidity_pattern: string
+        The name of the pattern describing relative humidity changes. By default = None (i.e constant)
+    precipitation : float
+         Average precipitation (rain/snow) over the simulation period. By default = 0.1 mm
+    precipitation_pattern: string
+        The name of the pattern describing precipitation changes. By default = None (i.e constant)
+    global_solar_radiation : float
+         Average global solar radiation over the simulation period. By default = 120 Wh/m²
+    global_solar_radiation_pattern: string
+        The name of the pattern describing global solar radiation changes. By default = None (i.e constant)
+    soil_temperature : float
+         Average soil temperature over the simulation period. By default = 10°C
+    soil_temperature_pattern: string
+        The name of the pattern describing soil temperature changes. By default = None (i.e constant)
+    depth_of_soil_temperature_device : float
+         The depth at which soil temperature measuring device is located. By default = 0.2 m
+    """
+
+    def __init__(self, model, 
+                 air_temperature = 15.0, air_temperature_pattern = None,
+                 wind_speed = 1.0, wind_speed_pattern= None,
+                 rel_humidity = 80.0, rel_humidity_pattern = None,
+                 precipitation = 0.1, precipitation_pattern = None,
+                 global_solar_radiation = 120.0, global_solar_radiation_pattern = None,
+                 soil_temperature = 10.0, soil_temperature_pattern = None,
+                 depth_of_soil_temperature_device = 0.2
+                 ):
+        self._air_temperature_timeseries = TimeSeries(model._pattern_reg, air_temperature, air_temperature_pattern)
+        self._wind_speed_timeseries = TimeSeries(model._pattern_reg, wind_speed, wind_speed_pattern)
+        self._rel_humidity_timeseries = TimeSeries(model._pattern_reg, rel_humidity, rel_humidity_pattern)
+        self._precipitation_timeseries = TimeSeries(model._pattern_reg, precipitation, precipitation_pattern)
+        self._global_solar_radiation_timeseries = TimeSeries(model._pattern_reg, global_solar_radiation, global_solar_radiation_pattern)
+        self._soil_temperature_timeseries = TimeSeries(model._pattern_reg, soil_temperature, soil_temperature_pattern)
+        self._depth_of_soil_temperature_device = depth_of_soil_temperature_device
+        self._pattern_reg = model._pattern_reg
+        
+    @property
+    def air_temperature_timeseries(self):
+        """TimeSeries : timeseries of air temperature values (read only)"""
+        return self._air_temperature_timeseries 
+    @property 
+    def air_temperature(self):
+        """float: average air temperature"""
+        return self._air_temperature_timeseries.base_value
+    @air_temperature.setter 
+    def air_temperature(self, value):
+        self._air_temperature_timeseries.base_value = value
+    @property 
+    def air_temperature_pattern(self):
+        """string: air temperature pattern name"""
+        return self._air_temperature_timeseries.pattern 
+    @air_temperature_pattern.setter 
+    def air_temperature_pattern(self,value):
+        self._air_temperature_timeseries.pattern = value
+    
+    @property
+    def wind_speed_timeseries(self):
+        """TimeSeries : timeseries of wind speed values (read only)"""
+        return self._wind_speed_timeseries    
+    @property 
+    def wind_speed(self):
+        """float: average wind speed"""
+        return self._wind_speed_timeseries.base_value
+    @wind_speed.setter 
+    def wind_speed(self, value):
+        self._wind_speed_timeseries.base_value = value
+    @property 
+    def wind_speed_pattern(self):
+        """string: wind speed pattern name"""
+        return self._wind_speed_timeseries.pattern 
+    @wind_speed_pattern.setter 
+    def wind_speed_pattern(self,value):
+        self._wind_speed_timeseries.pattern = value
+    
+    @property
+    def rel_humidity_timeseries(self):
+        """TimeSeries : timeseries of relative humidity values (read only)"""
+        return self._rel_humidity_timeseries    
+    @property 
+    def rel_humidity(self):
+        """float: average relative humidity"""
+        return self._rel_humidity_timeseries.base_value
+    @rel_humidity.setter 
+    def rel_humidity(self, value):
+        self._rel_humidity_timeseries.base_value = value
+    @property 
+    def rel_humidity_pattern(self):
+        """string: relative humidity pattern name"""
+        return self._rel_humidity_timeseries.pattern 
+    @rel_humidity_pattern.setter 
+    def rel_humidity_pattern(self,value):
+        self._rel_humidity_timeseries.pattern = value
+
+    @property
+    def precipitation_timeseries(self):
+        """TimeSeries : timeseries of precipitation values (read only)"""
+        return self._precipitation_timeseries    
+    @property 
+    def precipitation(self):
+        """float: average precipitation"""
+        return self._precipitation_timeseries.base_value
+    @precipitation.setter 
+    def precipitation(self, value):
+        self._precipitation_timeseries.base_value = value
+    @property 
+    def precipitation_pattern(self):
+        """string: precipitation pattern name"""
+        return self._precipitation_timeseries.pattern 
+    @precipitation_pattern.setter 
+    def precipitation_pattern(self,value):
+        self._precipitation_timeseries.pattern = value
+        
+    @property
+    def global_solar_radiation_timeseries(self):
+        """TimeSeries : timeseries of global solar radiation values (read only)"""
+        return self._global_solar_radiation_timeseries    
+    @property 
+    def global_solar_radiation(self):
+        """float: average global solar radiation"""
+        return self._global_solar_radiation_timeseries.base_value
+    @global_solar_radiation.setter 
+    def global_solar_radiation(self, value):
+        self._global_solar_radiation_timeseries.base_value = value
+    @property 
+    def global_solar_radiation_pattern(self):
+        """string: global solar radiation pattern name"""
+        return self._global_solar_radiation_timeseries.pattern 
+    @global_solar_radiation_pattern.setter 
+    def global_solar_radiation_pattern(self,value):
+        self._global_solar_radiation_timeseries.pattern = value
+        
+    @property
+    def soil_temperature_timeseries(self):
+        """TimeSeries : timeseries of  soil temperature values (read only)"""
+        return self._soil_temperature_timeseries    
+    @property 
+    def soil_temperature(self):
+        """float: average  soil temperature"""
+        return self._soil_temperature_timeseries.base_value
+    @soil_temperature.setter 
+    def soil_temperature(self, value):
+        self._soil_temperature_timeseries.base_value = value
+    @property 
+    def soil_temperature_pattern(self):
+        """string:  soil temperature pattern name"""
+        return self._soil_temperature_timeseries.pattern 
+    @soil_temperature_pattern.setter 
+    def soil_temperature_pattern(self,value):
+        self._soil_temperature_timeseries.pattern = value
+         
+    @property 
+    def depth_of_soil_temperature_device(self):
+        """float: the depth at which soil temperature device is located"""
+        return self._depth_of_soil_temperature_device
+    @depth_of_soil_temperature_device.setter 
+    def depth_of_soil_temperature_device(self, value):
+        self._depth_of_soil_temperature_device = value
