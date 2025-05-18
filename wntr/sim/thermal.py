@@ -94,7 +94,7 @@ class ThermalSimulator:
         
         self._coef_matrix[node._id, node._id] = (node.cell_volume + acc_volume)/ self._timestep + self._flow_val[t, downstream_links_ids].sum() + self._demands[t, node._id] + rho_cp_R_inv                                                  
         self._coef_matrix[node._id, upstream_nodes_ids] = -self._flow_val[t, upstream_links_ids] 
-        self._result_vector[node._id] = node.soil_temperature_at(self._times[t]) * rho_cp_R_inv  + self._temperatures[t-1, node._id] * (node.cell_volume + acc_volume)/ self._timestep
+        self._result_vector[node._id] = node._soil_props.temperature_at(self._times[t]) * rho_cp_R_inv  + self._temperatures[t-1, node._id] * (node.cell_volume + acc_volume)/ self._timestep
         
         
     def run_sim(self):
