@@ -107,6 +107,7 @@ class Junction(Node):
         self._leak_end_control_name = 'junction'+self._name+'end_leak_control'
         
         self._initial_temperature = 10.0
+        self._soil_props = SoilProperties(wn)
         
     def __repr__(self):
         return "<Junction '{}', elevation={}, demand_timeseries_list={}>".format(self._name, self.elevation, repr(self.demand_timeseries_list))
@@ -256,6 +257,11 @@ class Junction(Node):
     @demand_category.setter
     def demand_category(self, value):
         raise RuntimeWarning('The demand_category property is read-only. Please modify using demand_timeseries_list[0].category.')
+    
+    @property 
+    def soil_props(self):
+        """SoilProperties: object contining thermophysical properites of the soil at the current node"""
+        return self._soil_props
     
     def add_leak(self, wn, area, discharge_coeff=0.75, start_time=None, end_time=None):
         """
@@ -468,6 +474,7 @@ class Tank(Node):
         self._leak_end_control_name = 'tank'+self._name+'end_leak_control'
         
         self._initial_temperature = 10.0
+        self._soil_props = SoilProperties(wn)
 
     def __repr__(self):
         return "<Tank '{}', elevation={}, min_level={}, max_level={}, diameter={}, min_vol={}, vol_curve='{}'>".format(self._name, self.elevation, self.min_level, self.max_level, self.diameter, self.min_vol, (self.vol_curve.name if self.vol_curve else None))
@@ -644,6 +651,11 @@ class Tank(Node):
         if value and not isinstance(value, (float, int)):
             raise ValueError('Initial temperature must be a number')
         self._initial_temperature = value
+        
+    @property 
+    def soil_props(self):
+        """SoilProperties: object contining thermophysical properites of the soil at the current node"""
+        return self._soil_props
 
     def get_volume(self, level=None):
         """
@@ -803,6 +815,7 @@ class Reservoir(Node):
         self.head_pattern_name = head_pattern
         """str : Name of the head pattern to use"""
         self._temperature_timeseries = TimeSeries(wn._pattern_reg, 8.0)
+        self._soil_props = SoilProperties(wn)
 
     def __repr__(self):
         return "<Reservoir '{}', head={}>".format(self._name, self._head_timeseries)
@@ -877,6 +890,11 @@ class Reservoir(Node):
     def temperature_at(self, time):
         """float: The soil temperature at given time in seconds"""
         return self._temperature_timeseries.at(time)
+    
+    @property 
+    def soil_props(self):
+        """SoilProperties: object contining thermophysical properites of the soil at the current node"""
+        return self._soil_props
 
 class Pipe(Link):
     """
@@ -2953,165 +2971,194 @@ class Weather(object):
     
     Parameters
     ----------
-    air_temperature : float
+    base_air_temperature : float
          Average air temperature over the simulation period. By default = 15°C
-    air_temperature_pattern: string
+    air_temperature_pattern_name: string
         The name of the pattern describing air temperature changes. By default = None (i.e constant)
-    wind_speed : float
+    base_wind_speed : float
          Average wind speed over the simulation period. By default = 1.0 m/s
-    wind_speed_pattern: string
+    wind_speed_pattern_name: string
         The name of the pattern describing wind speed changes. By default = None (i.e constant)
-    rel_humidity : float
+    base_rel_humidity : float
          Average relative humidity over the simulation period. By default = 80%
-    rel_humidity_pattern: string
+    rel_humidity_pattern_name: string
         The name of the pattern describing relative humidity changes. By default = None (i.e constant)
-    precipitation : float
+    base_precipitation : float
          Average precipitation (rain/snow) over the simulation period. By default = 0.1 mm
-    precipitation_pattern: string
+    precipitation_pattern_name: string
         The name of the pattern describing precipitation changes. By default = None (i.e constant)
-    global_solar_radiation : float
+    base_global_solar_radiation : float
          Average global solar radiation over the simulation period. By default = 120 Wh/m²
-    global_solar_radiation_pattern: string
+    global_solar_radiation_pattern_name: string
         The name of the pattern describing global solar radiation changes. By default = None (i.e constant)
-    soil_temperature : float
+    base_soil_temperature : float
          Average soil temperature over the simulation period. By default = 10°C
-    soil_temperature_pattern: string
+    soil_temperature_pattern_name: string
         The name of the pattern describing soil temperature changes. By default = None (i.e constant)
     depth_of_soil_temperature_device : float
          The depth at which soil temperature measuring device is located. By default = 0.2 m
     """
 
     def __init__(self, model, 
-                 air_temperature = 15.0, air_temperature_pattern = None,
-                 wind_speed = 1.0, wind_speed_pattern= None,
-                 rel_humidity = 80.0, rel_humidity_pattern = None,
-                 precipitation = 0.1, precipitation_pattern = None,
-                 global_solar_radiation = 120.0, global_solar_radiation_pattern = None,
-                 soil_temperature = 10.0, soil_temperature_pattern = None,
+                 base_air_temperature = 15.0, air_temperature_pattern_name = None,
+                 base_wind_speed = 1.0, wind_speed_pattern_name = None,
+                 base_rel_humidity = 80.0, rel_humidity_pattern_name  = None,
+                 base_precipitation = 0.1, precipitation_pattern_name = None,
+                 base_global_solar_radiation = 120.0, global_solar_radiation_pattern_name = None,
+                 base_soil_temperature = 10.0, soil_temperature_pattern_name = None,
                  depth_of_soil_temperature_device = 0.2
                  ):
-        self._air_temperature_timeseries = TimeSeries(model._pattern_reg, air_temperature, air_temperature_pattern)
-        self._wind_speed_timeseries = TimeSeries(model._pattern_reg, wind_speed, wind_speed_pattern)
-        self._rel_humidity_timeseries = TimeSeries(model._pattern_reg, rel_humidity, rel_humidity_pattern)
-        self._precipitation_timeseries = TimeSeries(model._pattern_reg, precipitation, precipitation_pattern)
-        self._global_solar_radiation_timeseries = TimeSeries(model._pattern_reg, global_solar_radiation, global_solar_radiation_pattern)
-        self._soil_temperature_timeseries = TimeSeries(model._pattern_reg, soil_temperature, soil_temperature_pattern)
+        self._air_temperature_timeseries = TimeSeries(model._pattern_reg, base_air_temperature, air_temperature_pattern_name,'weather')
+        self._wind_speed_timeseries = TimeSeries(model._pattern_reg, base_wind_speed, wind_speed_pattern_name,'weather')
+        self._rel_humidity_timeseries = TimeSeries(model._pattern_reg, base_rel_humidity, rel_humidity_pattern_name,'weather')
+        self._precipitation_timeseries = TimeSeries(model._pattern_reg, base_precipitation, precipitation_pattern_name,'weather')
+        self._global_solar_radiation_timeseries = TimeSeries(model._pattern_reg, base_global_solar_radiation, global_solar_radiation_pattern_name,'weather')
+        self._soil_temperature_timeseries = TimeSeries(model._pattern_reg, base_soil_temperature, soil_temperature_pattern_name,'weather')
         self._depth_of_soil_temperature_device = depth_of_soil_temperature_device
         self._pattern_reg = model._pattern_reg
+
+    def __repr__(self):
+        fmt = ("<Weather: \n air_temperature_timeseries={}, \n wind_speed_timeseries={}, \n rel_humidity_timeseries={},"
+               " \n precipitation_timeseries={}, \n global_solar_radiation_timeseries={}, \n soil_temperature_timeseries={}, \n _depth_of_soil_temperature_device={}>")
+        return fmt.format(repr(self._air_temperature_timeseries), 
+                          repr(self._wind_speed_timeseries),
+                          repr(self._rel_humidity_timeseries),
+                          repr(self._precipitation_timeseries),
+                          repr(self._global_solar_radiation_timeseries),
+                          repr(self._soil_temperature_timeseries),
+                          repr(self._depth_of_soil_temperature_device))
         
     @property
     def air_temperature_timeseries(self):
         """TimeSeries : timeseries of air temperature values (read only)"""
         return self._air_temperature_timeseries 
     @property 
-    def air_temperature(self):
+    def base_air_temperature(self):
         """float: average air temperature"""
         return self._air_temperature_timeseries.base_value
-    @air_temperature.setter 
-    def air_temperature(self, value):
+    @base_air_temperature.setter 
+    def base_air_temperature(self, value):
         self._air_temperature_timeseries.base_value = value
     @property 
-    def air_temperature_pattern(self):
+    def air_temperature_pattern_name(self):
         """string: air temperature pattern name"""
-        return self._air_temperature_timeseries.pattern 
-    @air_temperature_pattern.setter 
-    def air_temperature_pattern(self,value):
-        self._air_temperature_timeseries.pattern = value
-    
+        return self._air_temperature_timeseries.pattern_name 
+    @air_temperature_pattern_name.setter 
+    def air_temperature_pattern_name(self,value):
+        self._air_temperature_timeseries.pattern_name = value
+    def air_temperature_at(self,time):
+        """float: The air temperature at given time in seconds"""
+        return self._air_temperature_timeseries.at(time)
+
     @property
     def wind_speed_timeseries(self):
         """TimeSeries : timeseries of wind speed values (read only)"""
         return self._wind_speed_timeseries    
     @property 
-    def wind_speed(self):
+    def base_wind_speed(self):
         """float: average wind speed"""
         return self._wind_speed_timeseries.base_value
-    @wind_speed.setter 
-    def wind_speed(self, value):
+    @base_wind_speed.setter 
+    def base_wind_speed(self, value):
         self._wind_speed_timeseries.base_value = value
     @property 
-    def wind_speed_pattern(self):
+    def wind_speed_pattern_name(self):
         """string: wind speed pattern name"""
-        return self._wind_speed_timeseries.pattern 
-    @wind_speed_pattern.setter 
-    def wind_speed_pattern(self,value):
-        self._wind_speed_timeseries.pattern = value
+        return self._wind_speed_timeseries.pattern_name 
+    @wind_speed_pattern_name.setter 
+    def wind_speed_pattern_name(self,value):
+        self._wind_speed_timeseries.pattern_name = value
+    def wind_speed_at(self,time):
+        """float: The wind speed at given time in seconds"""
+        return self._wind_speed_timeseries.at(time)        
     
     @property
     def rel_humidity_timeseries(self):
         """TimeSeries : timeseries of relative humidity values (read only)"""
         return self._rel_humidity_timeseries    
     @property 
-    def rel_humidity(self):
+    def base_rel_humidity(self):
         """float: average relative humidity"""
         return self._rel_humidity_timeseries.base_value
-    @rel_humidity.setter 
-    def rel_humidity(self, value):
+    @base_rel_humidity.setter 
+    def base_rel_humidity(self, value):
         self._rel_humidity_timeseries.base_value = value
     @property 
-    def rel_humidity_pattern(self):
+    def rel_humidity_pattern_name(self):
         """string: relative humidity pattern name"""
-        return self._rel_humidity_timeseries.pattern 
-    @rel_humidity_pattern.setter 
-    def rel_humidity_pattern(self,value):
-        self._rel_humidity_timeseries.pattern = value
+        return self._rel_humidity_timeseries.pattern_name 
+    @rel_humidity_pattern_name.setter 
+    def rel_humidity_pattern_name(self,value):
+        self._rel_humidity_timeseries.pattern_name = value
+    def rel_humidity_at(self,time):
+        """float: The relative humidity at given time in seconds"""
+        return self._rel_humidity_timeseries.at(time)
 
     @property
     def precipitation_timeseries(self):
         """TimeSeries : timeseries of precipitation values (read only)"""
         return self._precipitation_timeseries    
     @property 
-    def precipitation(self):
+    def base_precipitation(self):
         """float: average precipitation"""
         return self._precipitation_timeseries.base_value
-    @precipitation.setter 
-    def precipitation(self, value):
+    @base_precipitation.setter 
+    def base_precipitation(self, value):
         self._precipitation_timeseries.base_value = value
     @property 
-    def precipitation_pattern(self):
+    def precipitation_pattern_name(self):
         """string: precipitation pattern name"""
-        return self._precipitation_timeseries.pattern 
-    @precipitation_pattern.setter 
-    def precipitation_pattern(self,value):
-        self._precipitation_timeseries.pattern = value
+        return self._precipitation_timeseries.pattern_name 
+    @precipitation_pattern_name.setter 
+    def precipitation_pattern_name(self,value):
+        self._precipitation_timeseries.pattern_name = value
+    def precipitation_at(self,time):
+        """float: The precipitation at given time in seconds"""
+        return self._precipitation_timeseries.at(time)
         
     @property
     def global_solar_radiation_timeseries(self):
         """TimeSeries : timeseries of global solar radiation values (read only)"""
         return self._global_solar_radiation_timeseries    
     @property 
-    def global_solar_radiation(self):
+    def base_global_solar_radiation(self):
         """float: average global solar radiation"""
         return self._global_solar_radiation_timeseries.base_value
-    @global_solar_radiation.setter 
-    def global_solar_radiation(self, value):
+    @base_global_solar_radiation.setter 
+    def base_global_solar_radiation(self, value):
         self._global_solar_radiation_timeseries.base_value = value
     @property 
-    def global_solar_radiation_pattern(self):
+    def global_solar_radiation_pattern_name(self):
         """string: global solar radiation pattern name"""
-        return self._global_solar_radiation_timeseries.pattern 
-    @global_solar_radiation_pattern.setter 
-    def global_solar_radiation_pattern(self,value):
-        self._global_solar_radiation_timeseries.pattern = value
+        return self._global_solar_radiation_timeseries.pattern_name 
+    @global_solar_radiation_pattern_name.setter 
+    def global_solar_radiation_pattern_name(self,value):
+        self._global_solar_radiation_timeseries.pattern_name = value
+    def global_solar_radiation_at(self,time):
+        """float: The global solar radiation at given time in seconds"""
+        return self._global_solar_radiation_timeseries.at(time)
         
     @property
     def soil_temperature_timeseries(self):
         """TimeSeries : timeseries of  soil temperature values (read only)"""
         return self._soil_temperature_timeseries    
     @property 
-    def soil_temperature(self):
+    def base_soil_temperature(self):
         """float: average  soil temperature"""
         return self._soil_temperature_timeseries.base_value
-    @soil_temperature.setter 
-    def soil_temperature(self, value):
+    @base_soil_temperature.setter 
+    def base_soil_temperature(self, value):
         self._soil_temperature_timeseries.base_value = value
     @property 
-    def soil_temperature_pattern(self):
+    def soil_temperature_pattern_name(self):
         """string:  soil temperature pattern name"""
-        return self._soil_temperature_timeseries.pattern 
-    @soil_temperature_pattern.setter 
-    def soil_temperature_pattern(self,value):
-        self._soil_temperature_timeseries.pattern = value
+        return self._soil_temperature_timeseries.pattern_name 
+    @soil_temperature_pattern_name.setter 
+    def soil_temperature_pattern_name(self,value):
+        self._soil_temperature_timeseries.pattern_name = value
+    def soil_temperature_at(self,time):
+        """float: The soil temperature at given time in seconds"""
+        return self._soil_temperature_timeseries.at(time)
          
     @property 
     def depth_of_soil_temperature_device(self):
@@ -3120,3 +3167,134 @@ class Weather(object):
     @depth_of_soil_temperature_device.setter 
     def depth_of_soil_temperature_device(self, value):
         self._depth_of_soil_temperature_device = value
+        
+        
+class SoilProperties(object):
+    """
+    SoilProperties class.
+    
+    Parameters
+    ----------
+    base_temperature : float
+        Average soil temperature over the simulation period. By default = 10°C
+    temperature_pattern_name: string
+        The name of the pattern describing soil temperature changes. By default = None (i.e constant)
+    base_thermal_conductivity : float
+         Average thermal conductivity over the simulation period. By default = 2.0 W/m.K
+    thermal_conductivity _pattern_name: string
+        The name of the pattern describing thermal conductivity changes. By default = None (i.e constant)
+    base_volumetric_heat_capacity : float
+         Average volumetric heat capacity (=density multiplied by heat capacity) over the simulation period. By default = 19e5 J/m³.K
+    rel_humidity_pattern_name: string
+        The name of the pattern describing volumetric heat capacity changes. By default = None (i.e constant)
+    base_absorptivity : float
+        Average radiation absorptivity of the soil over the simulation period. By default = 0.75
+    absorptivity_pattern_name: string
+        The name of the pattern describing soil absorptivity changes. By default = None (i.e constant)
+    """
+
+    def __init__(self, model, 
+                 base_temperature = 10.0, temperature_pattern_name = None,
+                 base_thermal_conductivity = 2.0, thermal_conductivity_pattern_name = None,
+                 base_volumetric_heat_capacity = 19e5, volumetric_heat_capacity_pattern_name = None,
+                 base_absorptivity = 0.75, absorptivity_pattern_name = None
+                 ):
+        self._temperature_timeseries = TimeSeries(model._pattern_reg, base_temperature, temperature_pattern_name,'soil_properties')
+        self._thermal_conductivity_timeseries = TimeSeries(model._pattern_reg, base_thermal_conductivity, thermal_conductivity_pattern_name,'soil_properties')
+        self._volumetric_heat_capacity_timeseries = TimeSeries(model._pattern_reg, base_volumetric_heat_capacity, volumetric_heat_capacity_pattern_name,'soil_properties')
+        self._absorptivity_timeseries = TimeSeries(model._pattern_reg, base_absorptivity, absorptivity_pattern_name,'soil_properties')
+        self._pattern_reg = model._pattern_reg
+    
+    def __repr__(self):
+        fmt = "<SoilProperties: \n temperature_timeseries={}, \n thermal_conductivity_timeseries={}, \n volumetric_heat_capacity_timeseries={}, \n absorptivity_timeseries={}>"
+        return fmt.format(repr(self._temperature_timeseries), 
+                          repr(self._thermal_conductivity_timeseries),
+                          repr(self._volumetric_heat_capacity_timeseries),
+                          repr(self._absorptivity_timeseries))
+    @property
+    def temperature_timeseries(self):
+        """TimeSeries : timeseries of soil temperature values (read only)"""
+        return self._temperature_timeseries    
+    @property 
+    def base_temperature(self):
+        """float: average soil temperature """
+        return self._temperature_timeseries.base_value
+    @base_temperature.setter 
+    def base_temperature(self, value):
+        self._temperature_timeseries.base_value = value
+    @property 
+    def temperature_pattern_name(self):
+        """string: soil temperature pattern name"""
+        return self._temperature_timeseries.pattern_name 
+    @temperature_pattern_name.setter 
+    def temperature_pattern_name(self,value):
+        self._temperature_timeseries.pattern_name = value
+    def temperature_at(self,time):
+        """float: The soil temperature at given time in seconds"""
+        return self._temperature_timeseries.at(time)
+        
+    @property
+    def thermal_conductivity_timeseries(self):
+        """TimeSeries : timeseries of soil thermal conductivity values (read only)"""
+        return self._thermal_conductivity_timeseries    
+    @property 
+    def base_thermal_conductivity(self):
+        """float: average soil thermal conductivity"""
+        return self._thermal_conductivity_timeseries.base_value
+    @base_thermal_conductivity.setter 
+    def base_thermal_conductivity(self, value):
+        self._thermal_conductivity_timeseries.base_value = value
+    @property 
+    def thermal_conductivity_pattern_name(self):
+        """string: soil thermal conductivity pattern name"""
+        return self._thermal_conductivity_timeseries.pattern_name 
+    @thermal_conductivity_pattern_name.setter 
+    def thermal_conductivity_pattern_name(self,value):
+        self._thermal_conductivity_timeseries.pattern_name = value
+    def thermal_conductivity_at(self,time):
+        """float: The soil thermal conductivityat given time in seconds"""
+        return self._thermal_conductivity_timeseries.at(time)
+        
+    @property
+    def volumetric_heat_capacity_timeseries(self):
+        """TimeSeries : timeseries of soil volumetric heat capacity values (read only)"""
+        return self._volumetric_heat_capacity_timeseries    
+    @property 
+    def base_volumetric_heat_capacity(self):
+        """float: average soil volumetric heat capacity"""
+        return self._volumetric_heat_capacity_timeseries.base_value
+    @base_volumetric_heat_capacity.setter 
+    def base_volumetric_heat_capacity(self, value):
+        self._volumetric_heat_capacity_timeseries.base_value = value
+    @property 
+    def volumetric_heat_capacity_pattern_name(self):
+        """string: soil volumetric heat capacity pattern name"""
+        return self._volumetric_heat_capacity_timeseries.pattern_name 
+    @volumetric_heat_capacity_pattern_name.setter 
+    def volumetric_heat_capacity_pattern_name(self,value):
+        self._volumetric_heat_capacity_timeseries.pattern_name = value
+    def volumetric_heat_capacity_at(self,time):
+        """float: The soil volumetric heat capacity at given time in seconds"""
+        return self._volumetric_heat_capacity_timeseries.at(time)
+        
+    @property
+    def absorptivity_timeseries(self):
+        """TimeSeries : timeseries of soil absorptivity values (read only)"""
+        return self._absorptivity_timeseries    
+    @property 
+    def base_absorptivity(self):
+        """float: average soil absorptivity"""
+        return self._absorptivity_timeseries.base_value
+    @base_absorptivity.setter 
+    def base_absorptivity(self, value):
+        self._absorptivity_timeseries.base_value = value
+    @property 
+    def absorptivity_pattern_name(self):
+        """string: soil absorptivity pattern name"""
+        return self._absorptivity_timeseries.pattern_name 
+    @absorptivity_pattern_name.setter 
+    def absorptivity_pattern_name(self,value):
+        self._absorptivity_timeseries.pattern_name = value
+    def absorptivity_at(self,time):
+        """float: The soil absorptivity at given time in seconds"""
+        return self._absorptivity_timeseries.at(time)

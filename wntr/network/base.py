@@ -124,11 +124,6 @@ class Node(six.with_metaclass(abc.ABCMeta, object)):
         self._source = None
         self._is_isolated = False
         
-        from wntr.network.elements import TimeSeries
-        self._soil_temperature_timeseries = TimeSeries(wn._pattern_reg, 6)
-        self._soil_thermal_conductivity = 2
-        self._soil_heat_capacity = 1125
-        self._soil_density = 1700
         self._underground_depth = 1.5
         self._connections = NodeConnections()
 
@@ -264,72 +259,6 @@ class Node(six.with_metaclass(abc.ABCMeta, object)):
             self._coordinates = tuple(coordinates)
         else:
             raise ValueError('coordinates must be a 2-tuple or len-2 list')
-    
-    @property 
-    def soil_temperature_timeseries(self):
-        """float: The soil temperature timeseries for the node (read only)"""
-        return self._soil_temperature_timeseries
-    
-    @property 
-    def base_soil_temperature(self):
-        """float: The constant soil temperature for the node, or the base value for a soil temperature timeseries"""
-        return self._soil_temperature_timeseries.base_value 
-    @base_soil_temperature.setter 
-    def base_soil_temperature(self, value):
-        if value and not isinstance(value, (float, int)):
-            raise ValueError('Soil base temperature must be a number')
-        self._soil_temperature_timeseries.base_value = value
-        
-    @property 
-    def soil_temperature_pattern_name(self):
-        """float: The name of the multiplier pattern to use for the soil temperature timeseries"""
-        return self._soil_temperature_timeseries.pattern_name 
-    @soil_temperature_pattern_name.setter 
-    def soil_temperature_pattern_name(self, name):
-        if name is not None:
-            self._pattern_reg.add_usage(name, (self.name, self.node_type))
-        if name and not isinstance(name, str):
-            raise ValueError('Soil temperature pattern name must be a string')
-        self._soil_temperature_timeseries.pattern_name = name
-    
-    def soil_temperature_at(self, time):
-        """float: The soil temperature at given time in seconds"""
-        return self._soil_temperature_timeseries.at(time)
-    
-    @property
-    def soil_thermal_conductivity(self):
-        """float: The thermal conductivity of soil material. Only used if the soil_temperature_input_method = 'calc' """
-        return self._soil_thermal_conductivity
-    @soil_thermal_conductivity.setter
-    def soil_thermal_conductivity(self, value):
-        if value and not isinstance(value, (float, int)):
-            raise ValueError('Soil thermal conductivity must be a number')
-        self._soil_thermal_conductivity = value
-    
-    @property
-    def soil_heat_capacity(self):
-        """float: The heat capacity of soil material. Only used if the soil_temperature_input_method = 'calc' """
-        return self._soil_heat_capacity
-    @soil_heat_capacity.setter
-    def soil_heat_capacity(self, value):
-        if value and not isinstance(value, (float, int)):
-            raise ValueError('Soil heat capacity must be a number')
-        self._soil_heat_capacity = value
-
-    @property
-    def soil_density(self):
-        """float: The density of soil material. Only used if the soil_temperature_input_method = 'calc' """
-        return self._soil_density
-    @soil_density.setter
-    def soil_density(self, value):
-        if value and not isinstance(value, (float, int)):
-            raise ValueError('Soil density must be a number')
-        self._soil_density = value
-        
-    @property
-    def soil_thermal_diffusivity(self):
-        """float: thermal diffusivity of the soil material"""
-        return self._soil_thermal_conductivity/(self._soil_density*self._soil_heat_capacity)
         
     @property 
     def total_thermal_resistance_reciprocal(self):
