@@ -2988,7 +2988,7 @@ class Weather(object):
     precipitation_pattern_name: string
         The name of the pattern describing precipitation changes. By default = None (i.e constant)
     base_global_solar_radiation : float
-         Average global solar radiation over the simulation period. By default = 120 Wh/m²
+         Average global solar radiation over the simulation period. By default = 0 Wh/m²
     global_solar_radiation_pattern_name: string
         The name of the pattern describing global solar radiation changes. By default = None (i.e constant)
     base_soil_temperature : float
@@ -3004,7 +3004,7 @@ class Weather(object):
                  base_wind_speed = 1.0, wind_speed_pattern_name = None,
                  base_rel_humidity = 80.0, rel_humidity_pattern_name  = None,
                  base_precipitation = 0.1, precipitation_pattern_name = None,
-                 base_global_solar_radiation = 120.0, global_solar_radiation_pattern_name = None,
+                 base_global_solar_radiation = 0.0, global_solar_radiation_pattern_name = None,
                  base_soil_temperature = 10.0, soil_temperature_pattern_name = None,
                  depth_of_soil_temperature_device = 0.2
                  ):
@@ -3070,8 +3070,12 @@ class Weather(object):
         self._wind_speed_timeseries.pattern_name = value
     def wind_speed_at(self,time):
         """float: The wind speed at given time in seconds"""
-        return self._wind_speed_timeseries.at(time)        
-    
+        return self._wind_speed_timeseries.at(time)  
+    def convective_heat_transfer_coef_at(self,time):
+        """float: The convective heat transfer coefficient of air in W/m².K at given time in seconds.
+                  Reference: McAdams, W.H. (1959). Heat Transmission, 3rd Edition"""
+        return 5.7 + 3.8 * self.wind_speed_at(time)
+
     @property
     def rel_humidity_timeseries(self):
         """TimeSeries : timeseries of relative humidity values (read only)"""
