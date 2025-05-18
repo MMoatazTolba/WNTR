@@ -125,6 +125,7 @@ class Node(six.with_metaclass(abc.ABCMeta, object)):
         self._is_isolated = False
         
         self._underground_depth = 1.5
+        self._thermal_boundary_condition = 'pipe'
         self._connections = NodeConnections()
 
     def _compare(self, other):
@@ -282,6 +283,27 @@ class Node(six.with_metaclass(abc.ABCMeta, object)):
         if value and not isinstance(value, (float, int)):
             raise ValueError('Underground depth must be a number')
         self._underground_depth = value
+    
+    @property 
+    def thermal_boundary_condition(self):
+        """string: The thermal boundary condition at the wall. Can be one of the following:
+                   'pipe' : The temperature at the outer wall of the pipe is input as boundary condition.
+                            When input to the thermal model, the output is the nodal water temperatures.
+                            
+                   'soil' : The temperature at point in the soil that is shallower than the pipe is input as boundary condtion.
+                            When input to the thermal model, the output is the nodal water temperatures and soil temperatures 
+                            around the pipe.
+                            
+                   'air'  : The atmospheric air temperature is input as boundary condition.
+                            When input to the thermal model, the output is the nodal water temperatures and soil temperatures 
+                            around the pipe.
+                            """
+        return self._wall_temperature_source
+    @thermal_boundary_condition.setter 
+    def thremal_boundary_condition(self,value):
+        if value not in ['pipe', 'soil', 'air']:
+            raise ValueError("thermal_boundary_condition must be either 'pipe', 'soil' or 'air'")
+        self._thermal_boundary_condition=value
 
     def to_dict(self):
         """Dictionary representation of the node"""
