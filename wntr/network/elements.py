@@ -1041,7 +1041,7 @@ class Pipe(Link):
     def outer_diameter(self):
         """float: outer diameter of the pipe including the insulation thickness"""
         return self._diameter + 2*(self._thickness + self._insulation_thickness)
-
+    
     @property
     def roughness(self):
         """float : pipe roughness"""
@@ -1175,11 +1175,16 @@ class Pipe(Link):
             raise ValueError('thermal conductivity must be a number')
         self._insulation_thermal_conductivity = value
         self._modify_connection_data('thermal_resistance', self.total_thermal_resistance)
-        
+    
+    @property 
+    def cross_section_area(self):
+        """float: the cross sectional area of the pipe (read only)"""
+        return np.pi/4 * self._diameter * self._diameter
+    
     @property
     def volume(self):
         """float : volume of the water inside the pipe"""
-        return np.pi/4 * self._diameter * self._diameter * self._length
+        return self.cross_section_area * self._length
     
     @property 
     def total_thermal_resistance(self):
@@ -3199,8 +3204,8 @@ class SoilProperties(object):
 
     def __init__(self, model, 
                  base_temperature = 10.0, temperature_pattern_name = None,
-                 base_thermal_conductivity = 2.0, thermal_conductivity_pattern_name = None,
-                 base_volumetric_heat_capacity = 19e5, volumetric_heat_capacity_pattern_name = None,
+                 base_thermal_conductivity = 1.0 , thermal_conductivity_pattern_name = None,
+                 base_volumetric_heat_capacity = 25e5, volumetric_heat_capacity_pattern_name = None,
                  base_absorptivity = 0.75, absorptivity_pattern_name = None
                  ):
         self._temperature_timeseries = TimeSeries(model._pattern_reg, base_temperature, temperature_pattern_name,'soil_properties')
