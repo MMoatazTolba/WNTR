@@ -125,7 +125,7 @@ class Node(six.with_metaclass(abc.ABCMeta, object)):
         self._is_isolated = False
         
         self._underground_depth = 1.5
-        self._thermal_boundary_condition = 'pipe'
+        self._thermal_bc = 'air'
         self._connections = NodeConnections()
 
     def _compare(self, other):
@@ -262,17 +262,16 @@ class Node(six.with_metaclass(abc.ABCMeta, object)):
             raise ValueError('coordinates must be a 2-tuple or len-2 list')
         
     @property 
-    def total_thermal_resistance_reciprocal(self):
-        """float: The reciprocal of the thermal resistance between the soil and the cell volume containing the node.
-           This is equivalent to the thermal resistances of half all pipes connected to the node"""
-        return np.reciprocal(self._connections.thermal_resistances).sum()*0.5
+    def total_thermal_resistance(self):
+        """float: The total the thermal resistance of all half pipes connected to the node (read only)"""
+        return 1/np.reciprocal(self._connections.thermal_resistances).sum()
     
     @property
-    def cell_volume(self):
-        """float: returns the volume of the finite-volume cell that contains the node. This is a read only property
-           for junctions and reservoirs this equals to the sum of all pipes connected divided by 2
+    def water_volume(self):
+        """float: the volume of the water in the node (read only)
+           for junctions and reservoirs this equals to the water volume in all half pipes connected to the node
            for tanks, the water volume in the tank is added as well"""
-        return sum(self._connections.volumes) * 0.5
+        return sum(self._connections.volumes)
     
     @property
     def underground_depth(self):
@@ -285,7 +284,41 @@ class Node(six.with_metaclass(abc.ABCMeta, object)):
         self._underground_depth = value
     
     @property 
-    def thermal_boundary_condition(self):
+    def soil_length(self):
+        """float: the equivalent length of the soil at current node (read onl)
+           by default this is equal to the sum of lengths of all half pipes connectd to the current node. Used to calculate the
+           thermal resistance of the soil"""
+        return sum(self._connections.lengths)
+    
+    @property 
+    def soil_inner_diameter(self):
+        """float: the equivalent inner diameter of the imaginary soil cylinder surrounding the pipes connected to the node (read only)
+           by default this equal to the mean outer diameters of all pipes connected to the current node.  """
+        return np.mean(self._connections.outer_diameters)
+    
+    @property 
+    def soil_outer_diameter(self):
+        """float: the equivalent outer diameter of the imaginary soil cylinder surrounding the pipes connected to the node (read only)
+           It is calculated by adding a thickness to the inner diameter."""
+        return self.soil_inner_diameter + 0.2
+    
+    @property 
+    def soil_area(self):
+        """float: the outer area of the imaginary soil cylinder surrounding the pipes connected to the node (read only) """
+        return np.pi * self.soil_outer_diameter * self.soil_length
+    
+    @property 
+    def soil_volume(self):
+        """float: the volume of the imshinsty soil cylinder surronding the pipes connected to the node (read only)
+           It affects the ammount of heat stored by the soil."""
+        return np.pi/4 * (self.soil_outer_diameter**2 - self.soil_inner_diameter**2) * self.soil_length
+    
+    @property 
+    def soil_air_interface_area(self):
+        return self.soil_length * 3
+    
+    @property 
+    def thermal_bc(self):
         """string: The thermal boundary condition at the wall. Can be one of the following:
                    'pipe' : The temperature at the outer wall of the pipe is input as boundary condition.
                             When input to the thermal model, the output is the nodal water temperatures.
@@ -298,12 +331,12 @@ class Node(six.with_metaclass(abc.ABCMeta, object)):
                             When input to the thermal model, the output is the nodal water temperatures and soil temperatures 
                             around the pipe.
                             """
-        return self._wall_temperature_source
-    @thermal_boundary_condition.setter 
-    def thremal_boundary_condition(self,value):
+        return self._thermal_bc
+    @thermal_bc.setter 
+    def thermal_bc(self,value):
         if value not in ['pipe', 'soil', 'air']:
             raise ValueError("thermal_boundary_condition must be either 'pipe', 'soil' or 'air'")
-        self._thermal_boundary_condition=value
+        self._thermal_bc=value
 
     def to_dict(self):
         """Dictionary representation of the node"""
@@ -874,16 +907,16 @@ class NodeConnections:
                              and 1 meaning that the node is the end node of the link.
                              This property is used by the thermal solver to calculate the flow direction 
                              
-        lengths            : a list of the lengths of all pipes connected to the node.
+        lengths            : a list of the lengths of all half-pipes connected to the node.
                              This property is used by the Node class to calculate the thermal resistance of the soil
                              
-        volumes            : a list of the water volumes inside each of the pipes connected to the node.
+        volumes            : a list of the water volumes inside each of the half-pipes connected to the node.
                              This property is used to calculate the volume of the cell containing the node.
                              
         outer_diameters    : a list of the outer diameters of pipes connected to the node(including insulation thickness).
                              This property is used by the Node class to calculate the thermal resistance of the soil
                              
-        thermal_resistances: a list of the thermal resistances of pipes  (including insulation thermal resistance)              
+        thermal_resistances: a list of the thermal resistances of the half-pipes  (including insulation thermal resistance)              
     """
     
     def __init__(self):
@@ -899,10 +932,10 @@ class NodeConnections:
         self.neighbour_nodes.append(node_name)
         self.connected_links.append(link_name)
         self.connection_side.append(link_side)
-        self.lengths.append(length)
-        self.volumes.append(volume)
+        self.lengths.append(length*0.5)
+        self.volumes.append(volume*0.5)
         self.outer_diameters.append(outer_diameter)
-        self.thermal_resistances.append(thermal_resistance)
+        self.thermal_resistances.append(thermal_resistance*2)
         
     def remove(self, link_name):
         index = self.connected_links.index(link_name)
@@ -917,13 +950,13 @@ class NodeConnections:
     def modify_property(self, link_name, property_name, property_value):
         index = self.connected_links.index(link_name)
         if property_name == 'length':
-            self.lengths[index] = property_value
+            self.lengths[index] = property_value*0.5
         elif property_name == 'volume':
-            self.volumes[index] = property_value
+            self.volumes[index] = property_value*0.5
         elif property_name == 'outer_diameter':
             self.outer_diameters[index] = property_value
         elif property_name == 'thermal_resistance':
-            self.thermal_resistances[index] = property_value
+            self.thermal_resistances[index] = property_value*2
         else:
             raise AttributeError("%s is not a valid property of NodeConnections. Valid properties are: 'length','outer_diameter', and 'thermal_resistance'"%property_name)
             
