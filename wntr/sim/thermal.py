@@ -64,11 +64,12 @@ class ThermalSimulator:
            The object containing results from the hydraulic simulation.
            Only flowrates, demands, and tanks' heads are used
        weather: :class:`~wntr.network.elements.Weather`
-           The object containing weather data which directly affects the network thermaly"""
+           The object containing weather data which directly affects the network thermally"""
     
     def __init__(self, wn: WaterNetworkModel, hyd_sim_results: SimulationResults, weather: Weather = None):
         
         self._model = wn
+        self._results = hyd_sim_results
         self._weather = weather
         
         self._time = TimeData(wn.options.time.hydraulic_timestep, wn.options.time.duration)
@@ -89,7 +90,7 @@ class ThermalSimulator:
         self._fluid_density = wn.options.hydraulic.specific_gravity * 1000
         self._fluid_heat_capacity = wn.options.thermal.heat_capacity
         
-        self._hydraulic = self._extract_relevant_hydraulic_data(hyd_sim_results)
+        self._hydraulic = self._extract_relevant_hydraulic_data()
 
         self._temperatures = np.zeros((self._time.stamps_num, self._nodes_data.num))
         self._soil_temperatures = np.zeros((self._time.stamps_num, self._nodes_data.num))
@@ -139,12 +140,12 @@ class ThermalSimulator:
         node_obj.air_bc = air_bc
         return node_obj
         
-    def _extract_relevant_hydraulic_data(self, hyd_sim_results: SimulationResults):
+    def _extract_relevant_hydraulic_data(self):
         hydraulic_data = HydraulicData()
-        hydraulic_data.flow_val = np.abs(hyd_sim_results.link['flowrate'].values) 
-        hydraulic_data.flow_dir = np.sign(hyd_sim_results.link['flowrate'].values) 
-        hydraulic_data.demands = hyd_sim_results.node['demand'].values + hyd_sim_results.node['leak_demand'].values
-        hydraulic_data.tanks_levels = hyd_sim_results.node['head'].values[:,self._tanks_data.ids] - np.array( [self._nodes[tank_name].elevation for tank_name in self._tanks_data.names] )
+        hydraulic_data.flow_val = np.abs(self._results.link['flowrate'].values) 
+        hydraulic_data.flow_dir = np.sign(self._results.link['flowrate'].values) 
+        hydraulic_data.demands = self._results.node['demand'].values + self._results.node['leak_demand'].values
+        hydraulic_data.tanks_levels = self._results.node['head'].values[:,self._tanks_data.ids] - np.array( [self._nodes[tank_name].elevation for tank_name in self._tanks_data.names] )
         return hydraulic_data
         
     def _initialize_matrices(self):
@@ -257,9 +258,11 @@ class ThermalSimulator:
             solution = np.linalg.solve(self._coef_matrix, self._result_vector)
             self._temperatures[t,:]=solution[:self._nodes_data.num]
             self._soil_temperatures[t,:]=solution[-self._nodes_data.num:]
-        temperatures_df = pd.DataFrame(self._temperatures, index=self._time.stamps, columns= self._nodes_data.names)
-        soil_tempratures_df = pd.DataFrame(self._soil_temperatures, index=self._time.stamps, columns= self._nodes_data.names)
-        return temperatures_df, soil_tempratures_df
+            
+        self._results.node['temperature'] = pd.DataFrame(self._temperatures, index=self._time.stamps, columns= self._nodes_data.names)
+        self._results.node['soil_temperature'] = pd.DataFrame(self._soil_temperatures, index=self._time.stamps, columns= self._nodes_data.names)
+        
+        return self._results
 
 
 def meshnet(wn: WaterNetworkModel, return_copy: bool=True) -> WaterNetworkModel:
