@@ -183,12 +183,12 @@ class ThermalSimulator:
         self._result_vector[node._id] = self._temperatures[t-1, node._id] * (node.water_volume + acc_volume)/ self._time.step
         
     def _modify_soil_temperature_rows(self, t, node, R1, R2, boundary_temperature, radiation_term = 0) :
-        self._coef_matrix[node._ID, node._ID] = node._soil_props.volumetric_heat_capacity_at(self._time.stamps[t]) * node.soil_volume/self._time.step + 1/R1 +  1/R2
+        C = node._soil_props.volumetric_heat_capacity_at(self._time.stamps[t])
+        dC = C - node._soil_props.volumetric_heat_capacity_at(self._time.stamps[t-1])
+        Vdt = node.soil_volume/self._time.step 
+        self._coef_matrix[node._ID, node._ID] = Vdt * (C+dC) + 1/R1 +  1/R2
         self._coef_matrix[node._ID, node._id] = -1/R1
-        C = node._soil_props.volumetric_heat_capacity_at(self._time.stamps[t-1])
-        T = node._soil_props.temperature_at(self._time.stamps[t-1])
-        self._result_vector[node._ID]  = C*T * node.soil_volume/self._time.step + boundary_temperature /R2 + radiation_term
-        a = R1
+        self._result_vector[node._ID]  = node._soil_props.temperature_at(self._time.stamps[t-1])* C * Vdt + boundary_temperature /R2 + radiation_term
     
     def _add_row_with_pipe_bc(self, t, node, acc_volume = 0) :
         R1 = node.total_thermal_resistance
