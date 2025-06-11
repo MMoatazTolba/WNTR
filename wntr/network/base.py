@@ -285,7 +285,7 @@ class Node(six.with_metaclass(abc.ABCMeta, object)):
     
     @property 
     def soil_length(self):
-        """float: the equivalent length of the soil at current node (read onl)
+        """float: the equivalent length of the soil at current node (read only)
            by default this is equal to the sum of lengths of all half pipes connectd to the current node. Used to calculate the
            thermal resistance of the soil"""
         return sum(self._connections.lengths)
