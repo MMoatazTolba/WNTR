@@ -41,6 +41,7 @@ class ObjData(object):
         self.pipe_bc = None
         self.soil_bc = None
         self.air_bc = None
+        self.needs_weather_data = None
         
 class HydraulicData(object):
     """A structure that holds relevant hydraulic data together. Only used by the ThermalSimulator class to organize the code"""
@@ -127,6 +128,8 @@ class ThermalSimulator:
                     air_bc_nodes_names.append(node_name)
                     air_bc_nodes_ids.append(self._nodes[node_name]._id)
                     
+        node_obj.needs_weather_data = soil_bc_nodes_ids != [] or air_bc_nodes_ids != []
+        
         pipe_bc = ObjData(pipe_bc_nodes_names, np.array(pipe_bc_nodes_ids, dtype=np.int32))
         soil_bc = ObjData(soil_bc_nodes_names, np.array(soil_bc_nodes_ids, dtype=np.int32))
         air_bc = ObjData(air_bc_nodes_names, np.array(air_bc_nodes_ids, dtype=np.int32))
@@ -164,47 +167,58 @@ class ThermalSimulator:
         return upstream_nodes_ids, upstream_links_ids, downstream_links_ids
     
     def _calculate_thermal_resistances(self, t, node, boundary_depth = 0, include_air_convection = False):
-        z = node.underground_depth - boundary_depth
-        k = node._soil_props.thermal_conductivity_at(self._time.stamps[t])
-        hA = self._weather.convective_heat_transfer_coef_at(self._time.stamps[t]) * node.soil_air_interface_area
-        R1 = node.total_thermal_resistance 
-        R2 = np.arccosh(2*z/node.soil_outer_diameter)/(2* np.pi * node.soil_length * k) + include_air_convection * 1/hA 
-        
+        R1 = np.inf
+        R2 = np.inf
+        if node.soil_outer_diameter * node.soil_length:
+            z = node.underground_depth - boundary_depth
+            k = node._soil_props.thermal_conductivity_at(self._time.stamps[t])
+            hA = self._weather.convective_heat_transfer_coef_at(self._time.stamps[t]) * node.soil_air_interface_area
+            R1 = node.total_thermal_resistance 
+            R2 = np.log(4*z/node.soil_outer_diameter)/(2* np.pi * node.soil_length * k) + include_air_convection * 1/hA
         return R1, R2
     
-    def _modify_water_temperature_rows(self, t, node, R1, acc_volume = 0) :
+    def _calculate_tanks_dV(self, t, tank_name):
+        V0 = self._tanks_volumes[t-1, self._nodes[tank_name]._id-self._junctions_data.num]
+        V1 = self._tanks_volumes[t  , self._nodes[tank_name]._id-self._junctions_data.num]
+        
+        return V1-V0
+    
+    def _modify_water_temperature_rows(self, t, node, R1, dV = 0) :
         upstream_nodes_ids, upstream_links_ids, downstream_links_ids = self._get_upstream_downstream_ids(t, node)
         
         rho_cp_R1_inv = 1 / (self._fluid_density * self._fluid_heat_capacity * R1)
         
-        self._coef_matrix[node._id, node._id] = (node.water_volume + acc_volume)/ self._time.step + self._hydraulic.flow_val[t, downstream_links_ids].sum() + self._hydraulic.demands[t, node._id] + rho_cp_R1_inv                                                  
+        self._coef_matrix[node._id, node._id] = (node.water_volume + dV)/ self._time.step + self._hydraulic.flow_val[t, downstream_links_ids].sum() + self._hydraulic.demands[t, node._id] + rho_cp_R1_inv                                                  
         self._coef_matrix[node._id, upstream_nodes_ids] = -self._hydraulic.flow_val[t, upstream_links_ids] 
         self._coef_matrix[node._id, node._ID] = -rho_cp_R1_inv
-        self._result_vector[node._id] = self._temperatures[t-1, node._id] * (node.water_volume + acc_volume)/ self._time.step
+        self._result_vector[node._id] = self._temperatures[t-1, node._id] * (node.water_volume + dV)/ self._time.step
         
     def _modify_soil_temperature_rows(self, t, node, R1, R2, boundary_temperature, radiation_term = 0) :
         C = node._soil_props.volumetric_heat_capacity_at(self._time.stamps[t])
         dC = C - node._soil_props.volumetric_heat_capacity_at(self._time.stamps[t-1])
         Vdt = node.soil_volume/self._time.step 
-        self._coef_matrix[node._ID, node._ID] = Vdt * (C+dC) + 1/R1 +  1/R2
-        self._coef_matrix[node._ID, node._id] = -1/R1
-        self._result_vector[node._ID]  = node._soil_props.temperature_at(self._time.stamps[t-1])* C * Vdt + boundary_temperature /R2 + radiation_term
+        if Vdt + 1/R1 + 1/R2:  
+            self._coef_matrix[node._ID, node._ID] = Vdt * (C+dC) + 1/R1 +  1/R2
+            self._coef_matrix[node._ID, node._id] = -1/R1
+            self._result_vector[node._ID]  = node._soil_props.temperature_at(self._time.stamps[t-1])* C * Vdt + boundary_temperature /R2 + radiation_term
+        else:
+            self._result_vector[node._ID]  = node._soil_props.temperature_at(self._time.stamps[t-1])
     
-    def _add_row_with_pipe_bc(self, t, node, acc_volume = 0) :
+    def _add_row_with_pipe_bc(self, t, node, dV = 0) :
         R1 = node.total_thermal_resistance
-        self._modify_water_temperature_rows(t, node, R1, acc_volume)
+        self._modify_water_temperature_rows(t, node, R1, dV)
     
-    def _add_row_with_soil_bc(self, t, node, acc_volume = 0) :    
+    def _add_row_with_soil_bc(self, t, node, dV = 0) :    
         R1, R2 = self._calculate_thermal_resistances(t, node, boundary_depth= self._weather.depth_of_soil_temperature_device)
         boundary_temperature = self._weather.soil_temperature_at(self._time.stamps[t])
-        self._modify_water_temperature_rows(t, node, R1, acc_volume)
+        self._modify_water_temperature_rows(t, node, R1, dV)
         self._modify_soil_temperature_rows(t, node, R1, R2, boundary_temperature)
         
-    def _add_row_with_air_bc(self, t, node, acc_volume = 0) :
+    def _add_row_with_air_bc(self, t, node, dV = 0) :
         R1, R2 = self._calculate_thermal_resistances(t, node, include_air_convection=True)
         boundary_temperature = self._weather.air_temperature_at(self._time.stamps[t])
         radiation_term = self._weather.global_solar_radiation_at(self._time.stamps[t]) * node.soil_air_interface_area * node._soil_props.absorptivity_at(self._time.stamps[t])
-        self._modify_water_temperature_rows(t, node, R1, acc_volume)
+        self._modify_water_temperature_rows(t, node, R1, dV)
         self._modify_soil_temperature_rows(t, node, R1, R2, boundary_temperature, radiation_term)
                
     def run_sim(self):
@@ -212,9 +226,18 @@ class ThermalSimulator:
         self._junctions_data = self._classify_nodes_per_boundary_condition(self._junctions_data)
         self._tanks_data = self._classify_nodes_per_boundary_condition(self._tanks_data)
         self._reservoirs_data = self._classify_nodes_per_boundary_condition(self._reservoirs_data)
+        
         pipe_bc_nodes_ids =  np.concatenate((self._junctions_data.pipe_bc.ids, self._tanks_data.pipe_bc.ids, self._reservoirs_data.pipe_bc.ids))
         pipe_bc_nodes_IDS = pipe_bc_nodes_ids + self._nodes_data.num
         pipe_bc_nodes_names =  self._junctions_data.pipe_bc.names + self._tanks_data.pipe_bc.names + self._reservoirs_data.pipe_bc.names
+        
+        if self._weather == None and (self._junctions_data.needs_weather_data or self._tanks_data.needs_weather_data or self._reservoirs_data.needs_weather_data):
+            self._weather = Weather(self._model)
+            self._weather.air_temperature_pattern_name = 'T_air'
+            self._weather.soil_temperature_pattern_name = 'T_soil_meters'
+            print("\n\n\nWARNING:\n========\n"
+                  "No weather object was given to the ThermalSimulator even though some nodes have 'soil' or 'air' defined as thermal boundary conditions. "
+                  "The ThermalSimulator will use a Weather object with default values to evaluate the nodal temperatures of those nodes.")
         
         for t in self._time.stamps_idx[1:]:
             self._temperatures[t,self._reservoirs_data.ids] = [self._nodes[node_name].temperature_at(self._time.stamps[t]) for node_name in self._reservoirs_data.names] 
@@ -236,13 +259,13 @@ class ThermalSimulator:
                 self._add_row_with_air_bc(t, self._nodes[junction_name])
                 
             for tank_name in self._tanks_data.pipe_bc.names:
-                self._add_row_with_pipe_bc(t, self._nodes[tank_name], self._tanks_volumes[self._time.stamps[t], self._nodes[tank_name]._id-self._junctions_data.num])
+                self._add_row_with_pipe_bc(t, self._nodes[tank_name], self._calculate_tanks_dV(t, tank_name))
                 
             for tank_name in self._tanks_data.soil_bc.names:
-                self._add_row_with_soil_bc(t, self._nodes[tank_name], self._tanks_volumes[self._time.stamps[t], self._nodes[tank_name]._id-self._junctions_data.num])
+                self._add_row_with_soil_bc(t, self._nodes[tank_name], self._calculate_tanks_dV(t, tank_name))
                 
             for tank_name in self._tanks_data.air_bc.names:
-                self._add_row_with_air_bc(t, self._nodes[tank_name], self._tanks_volumes[self._time.stamps[t], self._nodes[tank_name]._id-self._junctions_data.num])
+                self._add_row_with_air_bc(t, self._nodes[tank_name], self._calculate_tanks_dV(t, tank_name))
                 
             for reservoir_name in self._reservoirs_data.soil_bc.names:
                 R1, R2 = self._calculate_thermal_resistances(t, self._nodes[reservoir_name], boundary_depth=self._weather.depth_of_soil_temperature_device)

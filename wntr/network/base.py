@@ -125,7 +125,7 @@ class Node(six.with_metaclass(abc.ABCMeta, object)):
         self._is_isolated = False
         
         self._underground_depth = 1.5
-        self._thermal_bc = 'air'
+        self._thermal_bc = 'pipe'
         self._connections = NodeConnections()
 
     def _compare(self, other):
